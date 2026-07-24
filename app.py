@@ -8,17 +8,26 @@ from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
 
 # ==========================================
-# 1. CSS ÉP CỘT NẰM NGANG & LÀM ĐẸP NÚT BẤM
+# 1. CSS "ÉP CÂN": THU NHỎ BẢNG SỐ & CẮT LỀ THỪA
 # ==========================================
 st.markdown("""
 <style>
-    /* Ép tất cả các cột phải nằm ngang, không được rớt dòng trên điện thoại */
+    /* Cắt triệt để viền trắng thừa của toàn bộ ứng dụng trên mobile */
+    .block-container {
+        padding-top: 1.5rem !important;
+        padding-bottom: 1rem !important;
+        padding-left: 0.5rem !important;
+        padding-right: 0.5rem !important;
+    }
+
+    /* Ép tất cả các cột phải nằm ngang và sát rạt vào nhau */
     @media (max-width: 768px) {
         div[data-testid="stHorizontalBlock"] {
             display: flex !important;
             flex-direction: row !important;
             flex-wrap: nowrap !important;
-            gap: 5px !important;
+            gap: 4px !important; /* Khoảng cách siêu nhỏ giữa các cột */
+            margin-bottom: -10px !important; /* Kéo các hàng sát lại với nhau */
         }
         div[data-testid="column"] {
             width: 33.33% !important;
@@ -28,28 +37,43 @@ st.markdown("""
         }
     }
     
-    /* Thiết kế nút bấm của bảng số */
+    /* Thiết kế nút bấm số: Lùn xuống, vừa ngón tay, không tốn diện tích */
     [data-testid="stButton"] button {
-        height: 60px !important;
-        font-size: 22px !important;
+        height: 48px !important; 
+        min-height: 48px !important;
+        font-size: 20px !important;
         font-weight: bold !important;
-        border-radius: 8px !important;
+        border-radius: 6px !important;
+        padding: 0 !important;
+        margin: 0 !important;
     }
     
-    /* Làm đẹp thẻ tích lỗi */
+    /* Làm đẹp thẻ tích lỗi - Gọn gàng hơn */
     [data-testid="stCheckbox"] {
         background-color: #f8f9fa;
-        padding: 10px 15px;
+        padding: 8px 12px;
         border-radius: 8px;
-        border: 2px solid #e9ecef;
-        margin-bottom: 5px;
+        border: 1px solid #e9ecef;
+        margin-bottom: 3px;
     }
     [data-testid="stCheckbox"]:has(input:checked) {
         background-color: #e0f2fe;
         border-color: #3b82f6;
     }
     [data-testid="stCheckbox"] label { cursor: pointer; width: 100%; }
-    [data-testid="stCheckbox"] p { font-size: 16px !important; font-weight: bold !important; color: #333; }
+    [data-testid="stCheckbox"] p { font-size: 15px !important; font-weight: bold !important; color: #333; margin: 0;}
+    
+    /* Thu nhỏ chữ SBD hiển thị */
+    .sbd-box {
+        text-align: center; 
+        color: #1E88E5; 
+        background-color: #E3F2FD; 
+        padding: 8px; 
+        border-radius: 8px;
+        font-size: 24px;
+        font-weight: bold;
+        margin-bottom: 10px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -61,13 +85,13 @@ DANH_SACH_LOI = {
     "loi_2": "Không bật xi nhan trái/phải",
     "loi_3": "Không quan sát gương",
     "loi_4": "Dừng, đỗ xe sai quy định",
-    "loi_5": "Không chấp hành hiệu lệnh biển báo",
+    "loi_5": "Không chấp hành lệnh biển báo",
     "loi_6": "Mở cửa xe không an toàn",
     "loi_7": "Vượt xe không đảm bảo an toàn",
-    "loi_8": "Quay đầu xe không đúng quy định",
+    "loi_8": "Quay đầu xe sai quy định",
     "loi_9": "Không quan sát, giảm tốc độ",
-    "loi_10": "Lỗi không chấp hành vạch kẻ đường",
-    "loi_11": "Không thực hiện theo yêu cầu Sát hạch viên",
+    "loi_10": "Không chấp hành vạch kẻ đường",
+    "loi_11": "Không theo yêu cầu Sát hạch viên",
     "loi_12": "Lỗi khác"
 }
 
@@ -171,7 +195,7 @@ def huy_sbd():
     st.session_state.nhap_xong_sbd = False
 
 st.title("🚗 Chấm Lỗi Đường Trường")
-tab1, tab2 = st.tabs(["📝 NHẬP LỖI", "📊 XUẤT BÁO CÁO"])
+tab1, tab2 = st.tabs(["📝 NHẬP LỖI", "📊 BÁO CÁO"])
 
 # ------------------------------------------
 # TAB 1: NHẬP LIỆU
@@ -181,12 +205,12 @@ with tab1:
     ngay_iso = ngay_sat_hach_dt.strftime("%Y-%m-%d")
     ngay_hien_thi = ngay_sat_hach_dt.strftime("%d/%m/%Y")
 
-    # ----- TRẠNG THÁI 1: CHƯA NHẬP XONG SBD (HIỂN THỊ BẢNG SỐ) -----
+    # ----- TRẠNG THÁI 1: CHƯA NHẬP XONG SBD (HIỂN THỊ BẢNG SỐ SIÊU GỌN) -----
     if not st.session_state.nhap_xong_sbd:
         sbd_display = st.session_state.sbd_val if st.session_state.sbd_val else "---"
-        st.markdown(f"<h2 style='text-align: center; color: #1E88E5; background-color: #E3F2FD; padding: 15px; border-radius: 10px;'>SBD: {sbd_display}</h2>", unsafe_allow_html=True)
+        st.markdown(f"<div class='sbd-box'>SBD: {sbd_display}</div>", unsafe_allow_html=True)
 
-        st.markdown("<div style='margin-bottom: 10px;'>", unsafe_allow_html=True)
+        st.markdown("<div style='margin-bottom: 5px;'>", unsafe_allow_html=True)
         r1c1, r1c2, r1c3 = st.columns(3)
         r1c1.button("1", on_click=add_num, args=(1,), use_container_width=True)
         r1c2.button("2", on_click=add_num, args=(2,), use_container_width=True)
@@ -214,7 +238,7 @@ with tab1:
     else:
         colA, colB = st.columns([3, 1])
         with colA:
-            st.markdown(f"<h3 style='color: #1E88E5;'>Đang chấm SBD: {st.session_state.sbd_val}</h3>", unsafe_allow_html=True)
+            st.markdown(f"<h3 style='color: #1E88E5; margin: 0;'>Đang chấm SBD: {st.session_state.sbd_val}</h3>", unsafe_allow_html=True)
         with colB:
             st.button("🔄 Sửa", on_click=huy_sbd, use_container_width=True)
 
@@ -235,8 +259,6 @@ with tab1:
                 conn.commit()
                 
                 st.success(f"✅ Đã lưu thành công SBD **{st.session_state.sbd_val}**!")
-                
-                # Reset trạng thái quay lại màn hình bấm số
                 st.session_state.sbd_val = ""
                 st.session_state.nhap_xong_sbd = False
                 st.rerun()
@@ -249,7 +271,7 @@ with tab2:
     cols_loi_sql = ", ".join(DANH_SACH_LOI.keys())
 
     if loai_bao_cao == "Chi tiết (1 ngày)":
-        ngay_chon_dt = st.date_input("Chọn ngày muốn xuất:", date.today())
+        ngay_chon_dt = st.date_input("Chọn ngày xuất:", date.today())
         ngay_chon_iso = ngay_chon_dt.strftime("%Y-%m-%d")
         
         if st.button("📥 TẢI EXCEL", use_container_width=True, type="primary"):
