@@ -76,6 +76,16 @@ cols_sql = ", ".join([f"{col} INTEGER" for col in columns])
 c.execute(f"CREATE TABLE IF NOT EXISTS LoiThi (ngay TEXT, {cols_sql})")
 conn.commit()
 
+# Khởi tạo session state để theo dõi trạng thái form
+if "form_submitted" not in st.session_state:
+    st.session_state.form_submitted = False
+
+# Nếu form vừa được submit, reset tất cả checkbox keys
+if st.session_state.form_submitted:
+    for idx in range(len(columns)):
+        st.session_state[f"loi_{idx}"] = False
+    st.session_state.form_submitted = False
+
 # 2. Giao diện nhập liệu
 st.title("🚗 Tích Lỗi Học Viên")
 
@@ -95,8 +105,8 @@ with st.form("form_loi"):
         target_col = col1 if idx % 2 == 0 else col2
         with target_col:
             display_text = col_name.replace("_", " ")
-            # Mặc định checkbox luôn unchecked (False)
-            loi_values.append(int(st.checkbox(display_text, key=f"loi_{idx}", value=False)))
+            # Sử dụng session state để quản lý trạng thái checkbox
+            loi_values.append(int(st.checkbox(display_text, key=f"loi_{idx}")))
     
     col_btn1, col_btn2 = st.columns(2)
     
@@ -118,10 +128,8 @@ with st.form("form_loi"):
         st.success("✅ Đã lưu thành công!")
         st.balloons()
         
-        # Reset form bằng cách xóa các key từ session state
-        for idx in range(len(columns)):
-            if f"loi_{idx}" in st.session_state:
-                del st.session_state[f"loi_{idx}"]
+        # Đánh dấu form đã submit để reset ở lần rerun tiếp theo
+        st.session_state.form_submitted = True
         
         # Rerun để reset form
         st.rerun()
@@ -129,8 +137,7 @@ with st.form("form_loi"):
     if reset_btn:
         # Xóa tất cả checkbox
         for idx in range(len(columns)):
-            if f"loi_{idx}" in st.session_state:
-                del st.session_state[f"loi_{idx}"]
+            st.session_state[f"loi_{idx}"] = False
         st.rerun()
 
 # 3. Xuất báo cáo tổng hợp ra Excel
