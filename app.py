@@ -203,6 +203,22 @@ elif filter_type == "Từ ngày đến ngày":
     with filter_col3:
         filter_date_to = st.date_input("Đến ngày:", date.today(), format="DD/MM/YYYY", key="filter_to_date")
 
+# Danh sách tên lỗi đầy đủ
+full_error_names = [
+    "Không thắt dây an toàn",
+    "Không bật xi nhan trái/phải",
+    "Không quan sát gương",
+    "Dừng, đỗ xe sai quy định",
+    "Không chấp hành hiệu lệnh",
+    "Mở cửa xe không an toàn",
+    "Vượt xe không đảm bảo",
+    "Quay đầu xe không đúng",
+    "Không quan sát, giảm tốc độ để hoạc dừng các trương hợp theo quy định",
+    "Lỗi vạch kẻ đường",
+    "Không thực hiện theo yêu cầu của Sát hạch viên",
+    "Lỗi khác"
+]
+
 def create_report_excel(df_tong_hop):
     """Tạo file Excel với định dạng theo mẫu"""
     wb = Workbook()
@@ -210,15 +226,22 @@ def create_report_excel(df_tong_hop):
     ws.title = "TongHopLoi"
     
     # Định dạng các kiểu
-    title_font = Font(name='Times New Roman', size=11, bold=True)
+    title_font = Font(name='Times New Roman', size=14, bold=True)
+    total_font = Font(name='Times New Roman', size=11, bold=True, color="CC0000")
     header_font = Font(name='Times New Roman', size=10, bold=True)
-    header_fill = PatternFill(start_color="D3D3D3", end_color="D3D3D3", fill_type="solid")
+    data_font = Font(name='Times New Roman', size=10)
+    
+    header_fill = PatternFill(start_color="B4C7E7", end_color="B4C7E7", fill_type="solid")
+    total_fill = PatternFill(start_color="E7E6E6", end_color="E7E6E6", fill_type="solid")
+    
     center_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    left_alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+    
     border = Border(
-        left=Side(style='thin'),
-        right=Side(style='thin'),
-        top=Side(style='thin'),
-        bottom=Side(style='thin')
+        left=Side(style='thin', color="000000"),
+        right=Side(style='thin', color="000000"),
+        top=Side(style='thin', color="000000"),
+        bottom=Side(style='thin', color="000000")
     )
     
     # Hàng tiêu đề (Row 1)
@@ -227,51 +250,78 @@ def create_report_excel(df_tong_hop):
     title_cell.value = "Số lượng lỗi do sát hạch viên trừ trong phần thi đường thường"
     title_cell.font = title_font
     title_cell.alignment = center_alignment
-    ws.row_dimensions[1].height = 25
+    ws.row_dimensions[1].height = 30
     
-    # Hàng tổng cộng (Row 2) - chứa dữ liệu tổng
+    # Hàng tổng cộng (Row 2)
     total_row_data = df_tong_hop.iloc[0]
     ws['A2'] = "TỔNG CỘNG"
-    ws['A2'].font = header_font
+    ws['A2'].font = total_font
+    ws['A2'].fill = total_fill
     ws['A2'].alignment = center_alignment
+    ws['A2'].border = border
     
-    for col_idx, col_name in enumerate(df_tong_hop.columns[1:], start=2):
+    col_idx = 2
+    for col_name in df_tong_hop.columns[2:]:
         cell = ws.cell(row=2, column=col_idx)
-        cell.value = int(total_row_data[col_name]) if col_name != "Ngày sát hạch" else total_row_data[col_name]
-        cell.font = header_font
+        value = total_row_data[col_name]
+        cell.value = int(value) if pd.notna(value) else 0
+        cell.font = total_font
+        cell.fill = total_fill
         cell.alignment = center_alignment
         cell.border = border
+        col_idx += 1
     
     # Hàng header (Row 3)
-    for col_idx, col_name in enumerate(df_tong_hop.columns, start=1):
+    col_idx = 1
+    for col_name in df_tong_hop.columns:
         cell = ws.cell(row=3, column=col_idx)
         cell.value = col_name
         cell.font = header_font
         cell.fill = header_fill
         cell.alignment = center_alignment
         cell.border = border
+        col_idx += 1
+    
+    ws.row_dimensions[3].height = 40
     
     # Dữ liệu (từ Row 4 trở đi)
     for row_idx, (_, row_data) in enumerate(df_tong_hop.iloc[1:].iterrows(), start=4):
-        for col_idx, col_name in enumerate(df_tong_hop.columns, start=1):
+        col_idx = 1
+        for col_name in df_tong_hop.columns:
             cell = ws.cell(row=row_idx, column=col_idx)
             value = row_data[col_name]
-            cell.value = value
+            
+            if col_name == 'STT':
+                cell.value = value if value != '' else ''
+            elif col_name == 'Ngày sát hạch':
+                cell.value = value
+            else:
+                cell.value = int(value) if pd.notna(value) else 0
+            
+            cell.font = data_font
             cell.alignment = center_alignment
             cell.border = border
-            if col_idx > 2:  # Các cột số
-                cell.value = int(value) if pd.notna(value) else 0
+            col_idx += 1
     
     # Điều chỉnh độ rộng cột
-    ws.column_dimensions['A'].width = 12
-    for col_idx in range(2, 14):
-        ws.column_dimensions[get_column_letter(col_idx)].width = 16
+    ws.column_dimensions['A'].width = 8
+    ws.column_dimensions['B'].width = 15
+    for col_idx in range(3, 15):
+        ws.column_dimensions[get_column_letter(col_idx)].width = 18
     
     # Lưu vào BytesIO
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
     return output.getvalue()
+
+def format_date(date_str):
+    """Chuyển đổi ngày sang định dạng DD/MM/YYYY"""
+    try:
+        date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+        return date_obj.strftime("%d/%m/%Y")
+    except:
+        return date_str
 
 if st.button("📥 Tạo Báo Cáo", use_container_width=True):
     # Đọc dữ liệu từ DB
@@ -308,30 +358,32 @@ if st.button("📥 Tạo Báo Cáo", use_container_width=True):
             stt = [''] + list(range(1, len(df_tong_hop)))
             df_tong_hop.insert(0, 'STT', stt)
             
-            # Đổi tên cột
-            df_tong_hop.columns = [
-                "STT", "Ngày sát hạch", "Không thắt dây an toàn", 
-                "Không bật xi nhan trái/phải", "Không quan sát gương", 
-                "Dừng, đỗ xe sai quy định", "Không chấp hành hiệu lệnh", 
-                "Mở cửa xe không an toàn", "Vượt xe không đảm bảo", 
-                "Quay đầu xe không đúng", "Không quan sát, giảm tốc", 
-                "Lỗi vạch kẻ đường", "Không thực hiện theo yêu cầu", "Lỗi khác"
-            ]
+            # Đổi tên cột với tên lỗi đầy đủ
+            df_tong_hop.columns = ['STT', 'Ngày sát hạch'] + full_error_names
             
-            # Tạo file Excel với định dạng
+            # Tạo file Excel
             excel_data = create_report_excel(df_tong_hop)
             
             st.download_button(
                 label="📥 Tải File Excel",
                 data=excel_data,
-                file_name=f"Bao_cao_loi_{date.today()}.xlsx",
+                file_name=f"Bao_cao_loi_{date.today().strftime('%d_%m_%Y')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True
             )
             
             # Hiển thị preview dữ liệu
             with st.expander("👁️ Xem trước dữ liệu"):
-                st.dataframe(df_tong_hop, use_container_width=True)
+                # Tạo dataframe hiển thị với định dạng đẹp
+                df_display = df_tong_hop.copy()
+                
+                # Format ngày DD/MM/YYYY cho cột Ngày sát hạch
+                df_display['Ngày sát hạch'] = df_display['Ngày sát hạch'].apply(
+                    lambda x: format_date(x) if x != 'TỔNG CỘNG' else x
+                )
+                
+                # Hiển thị bảng
+                st.dataframe(df_display, use_container_width=True)
 
 # 4. Phần quản lý dữ liệu (tùy chọn)
 with st.expander("⚙️ Quản Lý Dữ Liệu"):
@@ -344,14 +396,11 @@ with st.expander("⚙️ Quản Lý Dữ Liệu"):
             if not df_view.empty:
                 # Đổi tên cột cho hiển thị
                 df_view_display = df_view.copy()
-                df_view_display.columns = [
-                    "Ngày sát hạch", "Không thắt dây an toàn", 
-                    "Không bật xi nhan trái/phải", "Không quan sát gương", 
-                    "Dừng, đỗ xe sai quy định", "Không chấp hành hiệu lệnh", 
-                    "Mở cửa xe không an toàn", "Vượt xe không đảm bảo", 
-                    "Quay đầu xe không đúng", "Không quan sát, giảm tốc", 
-                    "Lỗi vạch kẻ đường", "Không thực hiện theo yêu cầu", "Lỗi khác"
-                ]
+                df_view_display.columns = ['Ngày sát hạch'] + full_error_names
+                
+                # Format ngày
+                df_view_display['Ngày sát hạch'] = df_view_display['Ngày sát hạch'].apply(format_date)
+                
                 st.dataframe(df_view_display, use_container_width=True)
             else:
                 st.info("Không có dữ liệu")
