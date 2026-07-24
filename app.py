@@ -3,7 +3,9 @@ import pandas as pd
 from datetime import date, datetime, timedelta
 import sqlite3
 import io
-import base64
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
+from openpyxl.utils import get_column_letter
 
 # Cấu hình trang cho di động
 st.set_page_config(
@@ -201,6 +203,76 @@ elif filter_type == "Từ ngày đến ngày":
     with filter_col3:
         filter_date_to = st.date_input("Đến ngày:", date.today(), format="DD/MM/YYYY", key="filter_to_date")
 
+def create_report_excel(df_tong_hop):
+    """Tạo file Excel với định dạng theo mẫu"""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "TongHopLoi"
+    
+    # Định dạng các kiểu
+    title_font = Font(name='Times New Roman', size=11, bold=True)
+    header_font = Font(name='Times New Roman', size=10, bold=True)
+    header_fill = PatternFill(start_color="D3D3D3", end_color="D3D3D3", fill_type="solid")
+    center_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    border = Border(
+        left=Side(style='thin'),
+        right=Side(style='thin'),
+        top=Side(style='thin'),
+        bottom=Side(style='thin')
+    )
+    
+    # Hàng tiêu đề (Row 1)
+    ws.merge_cells('A1:M1')
+    title_cell = ws['A1']
+    title_cell.value = "Số lượng lỗi do sát hạch viên trừ trong phần thi đường thường"
+    title_cell.font = title_font
+    title_cell.alignment = center_alignment
+    ws.row_dimensions[1].height = 25
+    
+    # Hàng tổng cộng (Row 2) - chứa dữ liệu tổng
+    total_row_data = df_tong_hop.iloc[0]
+    ws['A2'] = "TỔNG CỘNG"
+    ws['A2'].font = header_font
+    ws['A2'].alignment = center_alignment
+    
+    for col_idx, col_name in enumerate(df_tong_hop.columns[1:], start=2):
+        cell = ws.cell(row=2, column=col_idx)
+        cell.value = int(total_row_data[col_name]) if col_name != "Ngày sát hạch" else total_row_data[col_name]
+        cell.font = header_font
+        cell.alignment = center_alignment
+        cell.border = border
+    
+    # Hàng header (Row 3)
+    for col_idx, col_name in enumerate(df_tong_hop.columns, start=1):
+        cell = ws.cell(row=3, column=col_idx)
+        cell.value = col_name
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = center_alignment
+        cell.border = border
+    
+    # Dữ liệu (từ Row 4 trở đi)
+    for row_idx, (_, row_data) in enumerate(df_tong_hop.iloc[1:].iterrows(), start=4):
+        for col_idx, col_name in enumerate(df_tong_hop.columns, start=1):
+            cell = ws.cell(row=row_idx, column=col_idx)
+            value = row_data[col_name]
+            cell.value = value
+            cell.alignment = center_alignment
+            cell.border = border
+            if col_idx > 2:  # Các cột số
+                cell.value = int(value) if pd.notna(value) else 0
+    
+    # Điều chỉnh độ rộng cột
+    ws.column_dimensions['A'].width = 12
+    for col_idx in range(2, 14):
+        ws.column_dimensions[get_column_letter(col_idx)].width = 16
+    
+    # Lưu vào BytesIO
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return output.getvalue()
+
 if st.button("📥 Tạo Báo Cáo", use_container_width=True):
     # Đọc dữ liệu từ DB
     df = pd.read_sql_query("SELECT * FROM LoiThi", conn)
@@ -220,7 +292,7 @@ if st.button("📥 Tạo Báo Cáo", use_container_width=True):
             # Gom nhóm cộng dồn lỗi theo ngày
             df_tong_hop = df.groupby('ngay').sum(numeric_only=True).reset_index()
             
-            # Tính tổng cộng (chỉ lấy các cột số, không lấy cột ngay)
+            # Tính tổng cộng
             total_row = {}
             total_row['ngay'] = 'TỔNG CỘNG'
             
@@ -233,7 +305,6 @@ if st.button("📥 Tạo Báo Cáo", use_container_width=True):
             df_tong_hop = pd.concat([pd.DataFrame([total_row]), df_tong_hop], ignore_index=True)
             
             # Thêm cột STT
-            # Create STT as strings so we can put an empty string for the total row without dtype conflicts
             stt = [''] + list(range(1, len(df_tong_hop)))
             df_tong_hop.insert(0, 'STT', stt)
             
@@ -247,18 +318,12 @@ if st.button("📥 Tạo Báo Cáo", use_container_width=True):
                 "Lỗi vạch kẻ đường", "Không thực hiện theo yêu cầu", "Lỗi khác"
             ]
             
-            # Chuyển các cột lỗi thành số nguyên (trừ hàng tổng)
-            for col in df_tong_hop.columns[2:]:
-                df_tong_hop[col] = df_tong_hop[col].astype('Int64')
-            
-            # Xuất ra file Excel trên bộ nhớ (để tải về)
-            output = io.BytesIO()
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                df_tong_hop.to_excel(writer, index=False, sheet_name='TongHopLoi')
+            # Tạo file Excel với định dạng
+            excel_data = create_report_excel(df_tong_hop)
             
             st.download_button(
                 label="📥 Tải File Excel",
-                data=output.getvalue(),
+                data=excel_data,
                 file_name=f"Bao_cao_loi_{date.today()}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True
