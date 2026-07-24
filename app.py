@@ -3,277 +3,162 @@ import pandas as pd
 from datetime import date
 import sqlite3
 import io
-from openpyxl import Workbook
-from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
-from openpyxl.utils import get_column_letter
 
-# ==========================================
-# 1. CSS KHÓA CỨNG BẢNG SỐ & LÀM GỌN GIAO DIỆN
-# ==========================================
+# Cấu hình trang cho di động
+st.set_page_config(
+    page_title="Chấm Lỗi",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
+
+# CSS tối ưu cho điện thoại
 st.markdown("""
 <style>
-    /* Cắt bớt viền trắng thừa xung quanh app để tiết kiệm diện tích */
-    .block-container {
-        padding-top: 1.5rem !important;
-        padding-bottom: 1rem !important;
-        padding-left: 0.5rem !important;
-        padding-right: 0.5rem !important;
+    /* Tối ưu kích thước cho mobile */
+    .main {
+        padding: 0.5rem;
     }
-
-    /* CHỈ NHẮM VÀO BẢNG SỐ (CÁC HÀNG CÓ 3 CỘT): ÉP BUỘC NẰM NGANG */
-    [data-testid="stHorizontalBlock"]:has(> div:nth-child(3)) {
-        display: flex !important;
-        flex-direction: row !important;
-        flex-wrap: nowrap !important;
-        gap: 5px !important;
-    }
-    [data-testid="stHorizontalBlock"]:has(> div:nth-child(3)) > [data-testid="column"] {
-        width: 33.33% !important;
-        flex: 1 1 33.33% !important;
-        min-width: 0 !important;
-        padding: 0 !important;
-    }
-    
-    /* Thu nhỏ nút bấm số cho vừa tay, không chiếm chỗ */
-    [data-testid="stButton"] button {
-        height: 50px !important; 
-        min-height: 50px !important;
-        font-size: 22px !important;
-        font-weight: bold !important;
-        border-radius: 8px !important;
-        padding: 0 !important;
-        margin: 0 !important;
-    }
-    
-    /* Thiết kế thẻ chọn lỗi chạm là đổi màu */
-    [data-testid="stCheckbox"] {
-        background-color: #f8f9fa;
-        padding: 8px 12px;
-        border-radius: 8px;
-        border: 1px solid #e9ecef;
-        margin-bottom: 3px;
-    }
-    [data-testid="stCheckbox"]:has(input:checked) {
-        background-color: #e0f2fe;
-        border-color: #3b82f6;
-    }
-    [data-testid="stCheckbox"] label { cursor: pointer; width: 100%; }
-    [data-testid="stCheckbox"] p { font-size: 15px !important; font-weight: bold !important; color: #333; margin: 0;}
-    
-    /* Box hiển thị SBD */
-    .sbd-box {
-        text-align: center; 
-        color: #1E88E5; 
-        background-color: #E3F2FD; 
-        padding: 10px; 
-        border-radius: 8px;
-        font-size: 24px;
+    .stButton > button {
+        width: 100%;
+        padding: 10px;
+        font-size: 16px;
         font-weight: bold;
-        margin-bottom: 10px;
+    }
+    .stCheckbox {
+        padding: 8px 0;
+    }
+    .stCheckbox label {
+        font-size: 15px;
+    }
+    .stDateInput input {
+        font-size: 16px;
+    }
+    h1 {
+        font-size: 24px;
+        text-align: center;
+    }
+    h2 {
+        font-size: 18px;
+    }
+    /* Giảm khoảng cách giữa các phần tử */
+    .stForm {
+        border: 1px solid #ddd;
+        padding: 10px;
+        border-radius: 5px;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# ==========================================
-# 2. TỪ ĐIỂN LỖI & CƠ SỞ DỮ LIỆU
-# ==========================================
-DANH_SACH_LOI = {
-    "loi_1": "Không thắt dây an toàn",
-    "loi_2": "Không bật xi nhan trái/phải",
-    "loi_3": "Không quan sát gương",
-    "loi_4": "Dừng, đỗ xe sai quy định",
-    "loi_5": "Không chấp hành lệnh biển báo",
-    "loi_6": "Mở cửa xe không an toàn",
-    "loi_7": "Vượt xe không đảm bảo an toàn",
-    "loi_8": "Quay đầu xe sai quy định",
-    "loi_9": "Không quan sát, giảm tốc độ",
-    "loi_10": "Không chấp hành vạch kẻ đường",
-    "loi_11": "Không theo yêu cầu Sát hạch viên",
-    "loi_12": "Lỗi khác"
-}
-
-conn = sqlite3.connect("dulieu_loi_v9.db", check_same_thread=False)
+# 1. Khởi tạo Database SQLite cục bộ
+conn = sqlite3.connect("dulieu_loi.db", check_same_thread=False)
 c = conn.cursor()
-cols_sql = ", ".join([f"{col} INTEGER" for col in DANH_SACH_LOI.keys()])
-c.execute(f"CREATE TABLE IF NOT EXISTS HocVien (id INTEGER PRIMARY KEY AUTOINCREMENT, ngay_iso TEXT, ngay_hien_thi TEXT, sbd TEXT, {cols_sql})")
+
+# Tạo bảng nếu chưa có
+columns = [
+    "Khong_that_day_an_toan", "Khong_bat_xi_nhan", "Khong_quan_sat_guong", 
+    "Dung_do_xe_sai_quy_dinh", "Khong_chap_hanh_bien_bao", "Mo_cua_xe_khong_an_toan", 
+    "Vuot_xe_khong_an_toan", "Quay_dau_sai_quy_dinh", "Khong_giam_toc_do", 
+    "Khong_chap_hanh_vach_ke", "Khong_nghe_sat_hach_vien", "Loi_khac"
+]
+cols_sql = ", ".join([f"{col} INTEGER" for col in columns])
+c.execute(f"CREATE TABLE IF NOT EXISTS LoiThi (ngay TEXT, {cols_sql})")
 conn.commit()
 
-# ==========================================
-# 3. HÀM TẠO EXCEL (GIỮ NGUYÊN)
-# ==========================================
-def tao_excel_chuan_mau(data_rows, ten_cot_2, tieu_de="Số lượng lỗi do sát hạch viên trừ trong phần thi đường trường"):
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Sheet1"
-    headers = ["STT", ten_cot_2] + list(DANH_SACH_LOI.values())
+# 2. Giao diện nhập liệu
+st.title("🚗 Tích Lỗi Học Viên")
 
-    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=len(headers))
-    title_cell = ws.cell(row=2, column=1, value=tieu_de)
-    title_cell.font = Font(name="Times New Roman", size=12, bold=True)
-    title_cell.alignment = Alignment(horizontal="center", vertical="center")
-    title_cell.fill = PatternFill(start_color="70AD47", end_color="70AD47", fill_type="solid")
+# Chọn ngày
+ngay_sat_hach = st.date_input("📅 Ngày sát hạch", date.today(), format="DD/MM/YYYY")
 
-    for col_idx, text in enumerate(headers, 1):
-        cell = ws.cell(row=3, column=col_idx, value=text)
-        cell.font = Font(name="Times New Roman", size=10, bold=True)
-        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-        cell.fill = PatternFill(start_color="70AD47", end_color="70AD47", fill_type="solid")
+# Form tích lỗi với 2 cột để tiết kiệm không gian
+st.write("**✓ Tích vào các lỗi học viên mắc phải:**")
 
-    ws.row_dimensions[2].height = 25
-    ws.row_dimensions[3].height = 80
+with st.form("form_loi"):
+    # Chia thành 2 cột trên mobile
+    col1, col2 = st.columns(2)
+    
+    loi_values = []
+    for idx, col_name in enumerate(columns):
+        # Phân bố đều các checkbox vào 2 cột
+        target_col = col1 if idx % 2 == 0 else col2
+        with target_col:
+            display_text = col_name.replace("_", " ")
+            loi_values.append(int(st.checkbox(display_text, key=f"loi_{idx}")))
+    
+    submit = st.form_submit_button("💾 Lưu Dữ Liệu", use_container_width=True)
+    
+    if submit:
+        placeholders = ", ".join(["?"] * (len(columns) + 1))
+        c.execute(f"INSERT INTO LoiThi VALUES ({placeholders})", [str(ngay_sat_hach)] + loi_values)
+        conn.commit()
+        st.success("✅ Đã lưu thành công!")
+        st.balloons()
 
-    start_row = 4
-    for idx, row_data in enumerate(data_rows, 1):
-        curr_row = start_row + idx - 1
-        ws.cell(row=curr_row, column=1, value=idx).alignment = Alignment(horizontal="center", vertical="center")
-        ws.cell(row=curr_row, column=2, value=row_data[0]).alignment = Alignment(horizontal="center", vertical="center")
-        for col_idx, val in enumerate(row_data[1:], 3):
-            cell = ws.cell(row=curr_row, column=col_idx, value=val)
-            cell.alignment = Alignment(horizontal="center", vertical="center")
-            cell.font = Font(name="Times New Roman", size=11)
+# 3. Xuất báo cáo tổng hợp ra Excel
+st.divider()
+st.subheader("📊 Báo Cáo Tổng Hợp")
 
-    last_data_row = start_row + len(data_rows) - 1
-    total_row = last_data_row + 1
+# Thống kê nhanh
+try:
+    df_all = pd.read_sql_query("SELECT * FROM LoiThi", conn)
+    if not df_all.empty:
+        st.info(f"📈 Tổng số lần ghi nhận: **{len(df_all)}** | Số ngày: **{df_all['ngay'].nunique()}**")
+except:
+    pass
 
-    ws.merge_cells(start_row=total_row, start_column=1, end_row=total_row, end_column=2)
-    total_label = ws.cell(row=total_row, column=1, value="TỔNG SỐ")
-    total_label.font = Font(name="Times New Roman", size=11, bold=True)
-    total_label.alignment = Alignment(horizontal="center", vertical="center")
-
-    for col_idx in range(3, len(headers) + 1):
-        col_letter = get_column_letter(col_idx)
-        sum_formula = f"=SUM({col_letter}{start_row}:{col_letter}{last_data_row})"
-        cell = ws.cell(row=total_row, column=col_idx, value=sum_formula)
-        cell.font = Font(name="Times New Roman", size=11, bold=True)
-        cell.alignment = Alignment(horizontal="center", vertical="center")
-
-    thin_border = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
-    for row in ws.iter_rows(min_row=2, max_row=total_row, min_col=1, max_col=len(headers)):
-        for cell in row: cell.border = thin_border
-
-    ws.column_dimensions['A'].width = 6
-    ws.column_dimensions['B'].width = 16
-    for i in range(3, len(headers) + 1):
-        ws.column_dimensions[get_column_letter(i)].width = 13
-
-    output = io.BytesIO()
-    wb.save(output)
-    return output.getvalue()
-
-# ==========================================
-# 4. GIAO DIỆN CHÍNH
-# ==========================================
-st.set_page_config(page_title="Chấm Lỗi Sát Hạch", page_icon="🚗", layout="centered")
-
-if "sbd_val" not in st.session_state: st.session_state.sbd_val = ""
-if "nhap_xong_sbd" not in st.session_state: st.session_state.nhap_xong_sbd = False
-
-def add_num(val): st.session_state.sbd_val += str(val)
-def clear_num(): st.session_state.sbd_val = ""
-def back_num(): st.session_state.sbd_val = st.session_state.sbd_val[:-1]
-
-def xac_nhan():
-    if st.session_state.sbd_val: st.session_state.nhap_xong_sbd = True
-    else: st.error("⚠️ Phải nhập số báo danh trước!")
-
-def huy_sbd(): st.session_state.nhap_xong_sbd = False
-
-st.title("🚗 Chấm Lỗi Đường Trường")
-tab1, tab2 = st.tabs(["📝 NHẬP LỖI", "📊 BÁO CÁO"])
-
-# ------------------------------------------
-# TAB 1: NHẬP LIỆU (Định dạng ngày dd/mm/yyyy)
-# ------------------------------------------
-with tab1:
-    ngay_sat_hach_dt = st.date_input("📅 Ngày sát hạch:", date.today(), format="DD/MM/YYYY")
-    ngay_iso = ngay_sat_hach_dt.strftime("%Y-%m-%d")
-    ngay_hien_thi = ngay_sat_hach_dt.strftime("%d/%m/%Y")
-
-    # ----- BẢNG SỐ SIÊU GỌN -----
-    if not st.session_state.nhap_xong_sbd:
-        sbd_display = st.session_state.sbd_val if st.session_state.sbd_val else "---"
-        st.markdown(f"<div class='sbd-box'>SBD: {sbd_display}</div>", unsafe_allow_html=True)
-
-        r1c1, r1c2, r1c3 = st.columns(3)
-        r1c1.button("1", on_click=add_num, args=(1,), use_container_width=True)
-        r1c2.button("2", on_click=add_num, args=(2,), use_container_width=True)
-        r1c3.button("3", on_click=add_num, args=(3,), use_container_width=True)
-
-        r2c1, r2c2, r2c3 = st.columns(3)
-        r2c1.button("4", on_click=add_num, args=(4,), use_container_width=True)
-        r2c2.button("5", on_click=add_num, args=(5,), use_container_width=True)
-        r2c3.button("6", on_click=add_num, args=(6,), use_container_width=True)
-
-        r3c1, r3c2, r3c3 = st.columns(3)
-        r3c1.button("7", on_click=add_num, args=(7,), use_container_width=True)
-        r3c2.button("8", on_click=add_num, args=(8,), use_container_width=True)
-        r3c3.button("9", on_click=add_num, args=(9,), use_container_width=True)
-
-        r4c1, r4c2, r4c3 = st.columns(3)
-        r4c1.button("Xóa", on_click=clear_num, use_container_width=True)
-        r4c2.button("0", on_click=add_num, args=(0,), use_container_width=True)
-        r4c3.button("Lùi", on_click=back_num, use_container_width=True)
-
-        st.button("✅ TIẾP TỤC (CHỌN LỖI)", on_click=xac_nhan, use_container_width=True, type="primary")
-
-    # ----- BẢNG LỖI -----
+if st.button("📥 Tạo File Excel", use_container_width=True):
+    # Đọc dữ liệu từ DB
+    df = pd.read_sql_query("SELECT * FROM LoiThi", conn)
+    
+    if df.empty:
+        st.warning("⚠️ Chưa có dữ liệu để xuất.")
     else:
-        colA, colB = st.columns([3, 1])
-        with colA: st.markdown(f"<h3 style='color: #1E88E5; margin: 0;'>Đang chấm SBD: {st.session_state.sbd_val}</h3>", unsafe_allow_html=True)
-        with colB: st.button("🔄 Sửa", on_click=huy_sbd, use_container_width=True)
-
-        st.write("---")
-        with st.form("form_tich_loi", clear_on_submit=True):
-            loi_ghi_nhan = {}
-            for ma_loi, ten_loi in DANH_SACH_LOI.items():
-                loi_ghi_nhan[ma_loi] = st.checkbox(ten_loi)
-                
-            if st.form_submit_button("💾 LƯU VÀ TIẾP TỤC", use_container_width=True, type="primary"):
-                gia_tri_loi = [1 if loi_ghi_nhan[ma] else 0 for ma in DANH_SACH_LOI.keys()]
-                query = f"INSERT INTO HocVien (ngay_iso, ngay_hien_thi, sbd, {', '.join(DANH_SACH_LOI.keys())}) VALUES ({', '.join(['?']*(len(DANH_SACH_LOI)+3))})"
-                c.execute(query, [ngay_iso, ngay_hien_thi, st.session_state.sbd_val] + gia_tri_loi)
-                conn.commit()
-                
-                st.success(f"✅ Đã lưu thành công SBD **{st.session_state.sbd_val}**!")
-                st.session_state.sbd_val = ""
-                st.session_state.nhap_xong_sbd = False
-                st.rerun()
-
-# ------------------------------------------
-# TAB 2: XUẤT BÁO CÁO (Định dạng ngày dd/mm/yyyy)
-# ------------------------------------------
-with tab2:
-    loai_bao_cao = st.radio("Chọn loại báo cáo:", ["Chi tiết (1 ngày)", "Tổng hợp (Từ ngày - Đến ngày)"])
-    cols_loi_sql = ", ".join(DANH_SACH_LOI.keys())
-
-    if loai_bao_cao == "Chi tiết (1 ngày)":
-        ngay_chon_dt = st.date_input("Chọn ngày xuất:", date.today(), format="DD/MM/YYYY")
+        # Gom nhóm cộng dồn lỗi theo ngày
+        df_tong_hop = df.groupby('ngay').sum(numeric_only=True).reset_index()
+        df_tong_hop.insert(0, 'STT', range(1, len(df_tong_hop) + 1))
         
-        if st.button("📥 TẢI EXCEL", use_container_width=True, type="primary"):
-            c.execute(f"SELECT sbd, {cols_loi_sql} FROM HocVien WHERE ngay_iso = ? ORDER BY id ASC", (ngay_chon_dt.strftime("%Y-%m-%d"),))
-            rows = c.fetchall()
-            if not rows: st.warning("📭 Không có dữ liệu.")
-            else:
-                excel_bytes = tao_excel_chuan_mau(rows, "Số báo danh")
-                st.download_button("⬇️ LƯU FILE VỀ MÁY", data=excel_bytes, file_name=f"Chi_Tiet_{ngay_chon_dt.strftime('%d_%m_%Y')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
-                df_preview = pd.DataFrame(rows, columns=["SBD"] + list(DANH_SACH_LOI.values()))
-                df_preview.index = df_preview.index + 1
-                st.dataframe(df_preview, use_container_width=True)
+        # Đổi tên cột cho giống mẫu
+        df_tong_hop.columns = [
+            "STT", "Ngày sát hạch", "Không thắt dây an toàn", 
+            "Không bật xi nhan trái/phải", "Không quan sát gương", 
+            "Dừng, đỗ xe sai quy định", "Không chấp hành hiệu lệnh", 
+            "Mở cửa xe không an toàn", "Vượt xe không đảm bảo", 
+            "Quay đầu xe không đúng", "Không quan sát, giảm tốc", 
+            "Lỗi vạch kẻ đường", "Không thực hiện theo yêu cầu", "Lỗi khác"
+        ]
+        
+        # Xuất ra file Excel trên bộ nhớ (để tải về)
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df_tong_hop.to_excel(writer, index=False, sheet_name='TongHopLoi')
+        
+        st.download_button(
+            label="📥 Tải File Excel",
+            data=output.getvalue(),
+            file_name=f"Bao_cao_loi_{date.today()}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True
+        )
+        
+        # Hiển thị preview dữ liệu
+        with st.expander("👁️ Xem trước dữ liệu"):
+            st.dataframe(df_tong_hop, use_container_width=True)
 
-    else:
-        c1, c2 = st.columns(2)
-        with c1: tu_ngay_dt = st.date_input("Từ ngày:", date.today(), format="DD/MM/YYYY")
-        with c2: den_ngay_dt = st.date_input("Đến ngày:", date.today(), format="DD/MM/YYYY")
-
-        if st.button("📥 TẢI EXCEL TỔNG HỢP", use_container_width=True, type="primary"):
-            sums_sql = ", ".join([f"SUM({k})" for k in DANH_SACH_LOI.keys()])
-            query = f"SELECT ngay_hien_thi, {sums_sql} FROM HocVien WHERE ngay_iso BETWEEN ? AND ? GROUP BY ngay_iso ORDER BY ngay_iso ASC"
-            c.execute(query, (tu_ngay_dt.strftime("%Y-%m-%d"), den_ngay_dt.strftime("%Y-%m-%d")))
-            rows = c.fetchall()
-            if not rows: st.warning("📭 Không có dữ liệu.")
+# 4. Phần quản lý dữ liệu (tùy chọn)
+with st.expander("⚙️ Quản Lý Dữ Liệu"):
+    col_manage1, col_manage2 = st.columns(2)
+    
+    with col_manage1:
+        if st.button("🔍 Xem Tất Cả Dữ Liệu", use_container_width=True):
+            df_view = pd.read_sql_query("SELECT * FROM LoiThi", conn)
+            if not df_view.empty:
+                st.dataframe(df_view, use_container_width=True)
             else:
-                excel_bytes = tao_excel_chuan_mau(rows, "Ngày sát hạch")
-                st.download_button("⬇️ LƯU FILE VỀ MÁY", data=excel_bytes, file_name=f"Tong_Hop_{tu_ngay_dt.strftime('%d%m%Y')}_{den_ngay_dt.strftime('%d%m%Y')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
-                df_preview = pd.DataFrame(rows, columns=["Ngày"] + list(DANH_SACH_LOI.values()))
-                df_preview.index = df_preview.index + 1
-                st.dataframe(df_preview, use_container_width=True)
+                st.info("Không có dữ liệu")
+    
+    with col_manage2:
+        if st.button("🗑️ Xóa Tất Cả", use_container_width=True):
+            if st.confirm("⚠️ Bạn chắc chắn muốn xóa tất cả dữ liệu?"):
+                c.execute("DELETE FROM LoiThi")
+                conn.commit()
+                st.success("✅ Đã xóa tất cả dữ liệu")
