@@ -110,7 +110,7 @@ if "save_success" not in st.session_state:
     st.session_state.save_success = False
 
 # 2. Giao diện nhập liệu
-st.title("🚗 Tích Lỗi Học Viên")
+st.title("THỐNG KÊ LỖI ĐƯỜNG TRƯỜNG")
 
 # Chọn ngày
 ngay_sat_hach = st.date_input("📅 Ngày sát hạch", date.today(), format="DD/MM/YYYY")
@@ -247,7 +247,7 @@ def create_report_excel(df_tong_hop):
     # Hàng tiêu đề (Row 1)
     ws.merge_cells('A1:M1')
     title_cell = ws['A1']
-    title_cell.value = "Số lượng lỗi do sát hạch viên trừ trong phần thi đường thường"
+    title_cell.value = "Số lượng lỗi do sát hạch viên trừ trong phần thi đường trường"
     title_cell.font = title_font
     title_cell.alignment = center_alignment
     ws.row_dimensions[1].height = 30
