@@ -8,11 +8,11 @@ from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
 
 # ==========================================
-# 1. CSS "ÉP CÂN": THU NHỎ BẢNG SỐ & CẮT LỀ THỪA
+# 1. CSS KHÓA CỨNG BẢNG SỐ & LÀM GỌN GIAO DIỆN
 # ==========================================
 st.markdown("""
 <style>
-    /* Cắt triệt để viền trắng thừa của toàn bộ ứng dụng trên mobile */
+    /* Cắt bớt viền trắng thừa xung quanh app để tiết kiệm diện tích */
     .block-container {
         padding-top: 1.5rem !important;
         padding-bottom: 1rem !important;
@@ -20,35 +20,32 @@ st.markdown("""
         padding-right: 0.5rem !important;
     }
 
-    /* Ép tất cả các cột phải nằm ngang và sát rạt vào nhau */
-    @media (max-width: 768px) {
-        div[data-testid="stHorizontalBlock"] {
-            display: flex !important;
-            flex-direction: row !important;
-            flex-wrap: nowrap !important;
-            gap: 4px !important; /* Khoảng cách siêu nhỏ giữa các cột */
-            margin-bottom: -10px !important; /* Kéo các hàng sát lại với nhau */
-        }
-        div[data-testid="column"] {
-            width: 33.33% !important;
-            flex: 1 1 33.33% !important;
-            min-width: 0 !important;
-            padding: 0 !important;
-        }
+    /* CHỈ NHẮM VÀO BẢNG SỐ (CÁC HÀNG CÓ 3 CỘT): ÉP BUỘC NẰM NGANG */
+    [data-testid="stHorizontalBlock"]:has(> div:nth-child(3)) {
+        display: flex !important;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        gap: 5px !important;
+    }
+    [data-testid="stHorizontalBlock"]:has(> div:nth-child(3)) > [data-testid="column"] {
+        width: 33.33% !important;
+        flex: 1 1 33.33% !important;
+        min-width: 0 !important;
+        padding: 0 !important;
     }
     
-    /* Thiết kế nút bấm số: Lùn xuống, vừa ngón tay, không tốn diện tích */
+    /* Thu nhỏ nút bấm số cho vừa tay, không chiếm chỗ */
     [data-testid="stButton"] button {
-        height: 48px !important; 
-        min-height: 48px !important;
-        font-size: 20px !important;
+        height: 50px !important; 
+        min-height: 50px !important;
+        font-size: 22px !important;
         font-weight: bold !important;
-        border-radius: 6px !important;
+        border-radius: 8px !important;
         padding: 0 !important;
         margin: 0 !important;
     }
     
-    /* Làm đẹp thẻ tích lỗi - Gọn gàng hơn */
+    /* Thiết kế thẻ chọn lỗi chạm là đổi màu */
     [data-testid="stCheckbox"] {
         background-color: #f8f9fa;
         padding: 8px 12px;
@@ -63,12 +60,12 @@ st.markdown("""
     [data-testid="stCheckbox"] label { cursor: pointer; width: 100%; }
     [data-testid="stCheckbox"] p { font-size: 15px !important; font-weight: bold !important; color: #333; margin: 0;}
     
-    /* Thu nhỏ chữ SBD hiển thị */
+    /* Box hiển thị SBD */
     .sbd-box {
         text-align: center; 
         color: #1E88E5; 
         background-color: #E3F2FD; 
-        padding: 8px; 
+        padding: 10px; 
         border-radius: 8px;
         font-size: 24px;
         font-weight: bold;
@@ -78,7 +75,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. TỪ ĐIỂN LỖI & KHỞI TẠO CƠ SỞ DỮ LIỆU
+# 2. TỪ ĐIỂN LỖI & CƠ SỞ DỮ LIỆU
 # ==========================================
 DANH_SACH_LOI = {
     "loi_1": "Không thắt dây an toàn",
@@ -95,23 +92,14 @@ DANH_SACH_LOI = {
     "loi_12": "Lỗi khác"
 }
 
-conn = sqlite3.connect("dulieu_loi_v8.db", check_same_thread=False)
+conn = sqlite3.connect("dulieu_loi_v9.db", check_same_thread=False)
 c = conn.cursor()
-
 cols_sql = ", ".join([f"{col} INTEGER" for col in DANH_SACH_LOI.keys()])
-c.execute(f"""
-    CREATE TABLE IF NOT EXISTS HocVien (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        ngay_iso TEXT,
-        ngay_hien_thi TEXT,
-        sbd TEXT,
-        {cols_sql}
-    )
-""")
+c.execute(f"CREATE TABLE IF NOT EXISTS HocVien (id INTEGER PRIMARY KEY AUTOINCREMENT, ngay_iso TEXT, ngay_hien_thi TEXT, sbd TEXT, {cols_sql})")
 conn.commit()
 
 # ==========================================
-# 3. HÀM TẠO FILE EXCEL CHUẨN MẪU
+# 3. HÀM TẠO EXCEL (GIỮ NGUYÊN)
 # ==========================================
 def tao_excel_chuan_mau(data_rows, ten_cot_2, tieu_de="Số lượng lỗi do sát hạch viên trừ trong phần thi đường trường"):
     wb = Workbook()
@@ -173,11 +161,10 @@ def tao_excel_chuan_mau(data_rows, ten_cot_2, tieu_de="Số lượng lỗi do s�
     return output.getvalue()
 
 # ==========================================
-# 4. GIAO DIỆN ỨNG DỤNG (STREAMLIT)
+# 4. GIAO DIỆN CHÍNH
 # ==========================================
 st.set_page_config(page_title="Chấm Lỗi Sát Hạch", page_icon="🚗", layout="centered")
 
-# Quản lý trạng thái (State)
 if "sbd_val" not in st.session_state: st.session_state.sbd_val = ""
 if "nhap_xong_sbd" not in st.session_state: st.session_state.nhap_xong_sbd = False
 
@@ -186,31 +173,27 @@ def clear_num(): st.session_state.sbd_val = ""
 def back_num(): st.session_state.sbd_val = st.session_state.sbd_val[:-1]
 
 def xac_nhan():
-    if st.session_state.sbd_val:
-        st.session_state.nhap_xong_sbd = True
-    else:
-        st.error("⚠️ Phải nhập số báo danh trước!")
+    if st.session_state.sbd_val: st.session_state.nhap_xong_sbd = True
+    else: st.error("⚠️ Phải nhập số báo danh trước!")
 
-def huy_sbd():
-    st.session_state.nhap_xong_sbd = False
+def huy_sbd(): st.session_state.nhap_xong_sbd = False
 
 st.title("🚗 Chấm Lỗi Đường Trường")
 tab1, tab2 = st.tabs(["📝 NHẬP LỖI", "📊 BÁO CÁO"])
 
 # ------------------------------------------
-# TAB 1: NHẬP LIỆU
+# TAB 1: NHẬP LIỆU (Định dạng ngày dd/mm/yyyy)
 # ------------------------------------------
 with tab1:
-    ngay_sat_hach_dt = st.date_input("📅 Ngày sát hạch:", date.today())
+    ngay_sat_hach_dt = st.date_input("📅 Ngày sát hạch:", date.today(), format="DD/MM/YYYY")
     ngay_iso = ngay_sat_hach_dt.strftime("%Y-%m-%d")
     ngay_hien_thi = ngay_sat_hach_dt.strftime("%d/%m/%Y")
 
-    # ----- TRẠNG THÁI 1: CHƯA NHẬP XONG SBD (HIỂN THỊ BẢNG SỐ SIÊU GỌN) -----
+    # ----- BẢNG SỐ SIÊU GỌN -----
     if not st.session_state.nhap_xong_sbd:
         sbd_display = st.session_state.sbd_val if st.session_state.sbd_val else "---"
         st.markdown(f"<div class='sbd-box'>SBD: {sbd_display}</div>", unsafe_allow_html=True)
 
-        st.markdown("<div style='margin-bottom: 5px;'>", unsafe_allow_html=True)
         r1c1, r1c2, r1c3 = st.columns(3)
         r1c1.button("1", on_click=add_num, args=(1,), use_container_width=True)
         r1c2.button("2", on_click=add_num, args=(2,), use_container_width=True)
@@ -230,17 +213,14 @@ with tab1:
         r4c1.button("Xóa", on_click=clear_num, use_container_width=True)
         r4c2.button("0", on_click=add_num, args=(0,), use_container_width=True)
         r4c3.button("Lùi", on_click=back_num, use_container_width=True)
-        st.markdown("</div>", unsafe_allow_html=True)
 
         st.button("✅ TIẾP TỤC (CHỌN LỖI)", on_click=xac_nhan, use_container_width=True, type="primary")
 
-    # ----- TRẠNG THÁI 2: ĐÃ NHẬP XONG SBD (HIỂN THỊ BẢNG LỖI) -----
+    # ----- BẢNG LỖI -----
     else:
         colA, colB = st.columns([3, 1])
-        with colA:
-            st.markdown(f"<h3 style='color: #1E88E5; margin: 0;'>Đang chấm SBD: {st.session_state.sbd_val}</h3>", unsafe_allow_html=True)
-        with colB:
-            st.button("🔄 Sửa", on_click=huy_sbd, use_container_width=True)
+        with colA: st.markdown(f"<h3 style='color: #1E88E5; margin: 0;'>Đang chấm SBD: {st.session_state.sbd_val}</h3>", unsafe_allow_html=True)
+        with colB: st.button("🔄 Sửa", on_click=huy_sbd, use_container_width=True)
 
         st.write("---")
         with st.form("form_tich_loi", clear_on_submit=True):
@@ -248,13 +228,9 @@ with tab1:
             for ma_loi, ten_loi in DANH_SACH_LOI.items():
                 loi_ghi_nhan[ma_loi] = st.checkbox(ten_loi)
                 
-            submit_btn = st.form_submit_button("💾 LƯU VÀ TIẾP TỤC", use_container_width=True, type="primary")
-            
-            if submit_btn:
+            if st.form_submit_button("💾 LƯU VÀ TIẾP TỤC", use_container_width=True, type="primary"):
                 gia_tri_loi = [1 if loi_ghi_nhan[ma] else 0 for ma in DANH_SACH_LOI.keys()]
-                placeholders = ", ".join(["?"] * (len(DANH_SACH_LOI) + 3))
-                query = f"INSERT INTO HocVien (ngay_iso, ngay_hien_thi, sbd, {', '.join(DANH_SACH_LOI.keys())}) VALUES ({placeholders})"
-                
+                query = f"INSERT INTO HocVien (ngay_iso, ngay_hien_thi, sbd, {', '.join(DANH_SACH_LOI.keys())}) VALUES ({', '.join(['?']*(len(DANH_SACH_LOI)+3))})"
                 c.execute(query, [ngay_iso, ngay_hien_thi, st.session_state.sbd_val] + gia_tri_loi)
                 conn.commit()
                 
@@ -264,18 +240,17 @@ with tab1:
                 st.rerun()
 
 # ------------------------------------------
-# TAB 2: XUẤT VÀ XEM TRƯỚC BÁO CÁO
+# TAB 2: XUẤT BÁO CÁO (Định dạng ngày dd/mm/yyyy)
 # ------------------------------------------
 with tab2:
     loai_bao_cao = st.radio("Chọn loại báo cáo:", ["Chi tiết (1 ngày)", "Tổng hợp (Từ ngày - Đến ngày)"])
     cols_loi_sql = ", ".join(DANH_SACH_LOI.keys())
 
     if loai_bao_cao == "Chi tiết (1 ngày)":
-        ngay_chon_dt = st.date_input("Chọn ngày xuất:", date.today())
-        ngay_chon_iso = ngay_chon_dt.strftime("%Y-%m-%d")
+        ngay_chon_dt = st.date_input("Chọn ngày xuất:", date.today(), format="DD/MM/YYYY")
         
         if st.button("📥 TẢI EXCEL", use_container_width=True, type="primary"):
-            c.execute(f"SELECT sbd, {cols_loi_sql} FROM HocVien WHERE ngay_iso = ? ORDER BY id ASC", (ngay_chon_iso,))
+            c.execute(f"SELECT sbd, {cols_loi_sql} FROM HocVien WHERE ngay_iso = ? ORDER BY id ASC", (ngay_chon_dt.strftime("%Y-%m-%d"),))
             rows = c.fetchall()
             if not rows: st.warning("📭 Không có dữ liệu.")
             else:
@@ -287,16 +262,13 @@ with tab2:
 
     else:
         c1, c2 = st.columns(2)
-        with c1: tu_ngay_dt = st.date_input("Từ ngày:", date.today())
-        with c2: den_ngay_dt = st.date_input("Đến ngày:", date.today())
-        
-        tu_ngay_iso = tu_ngay_dt.strftime("%Y-%m-%d")
-        den_ngay_iso = den_ngay_dt.strftime("%Y-%m-%d")
+        with c1: tu_ngay_dt = st.date_input("Từ ngày:", date.today(), format="DD/MM/YYYY")
+        with c2: den_ngay_dt = st.date_input("Đến ngày:", date.today(), format="DD/MM/YYYY")
 
         if st.button("📥 TẢI EXCEL TỔNG HỢP", use_container_width=True, type="primary"):
             sums_sql = ", ".join([f"SUM({k})" for k in DANH_SACH_LOI.keys()])
             query = f"SELECT ngay_hien_thi, {sums_sql} FROM HocVien WHERE ngay_iso BETWEEN ? AND ? GROUP BY ngay_iso ORDER BY ngay_iso ASC"
-            c.execute(query, (tu_ngay_iso, den_ngay_iso))
+            c.execute(query, (tu_ngay_dt.strftime("%Y-%m-%d"), den_ngay_dt.strftime("%Y-%m-%d")))
             rows = c.fetchall()
             if not rows: st.warning("📭 Không có dữ liệu.")
             else:
