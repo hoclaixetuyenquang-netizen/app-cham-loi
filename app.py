@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import date
+from datetime import date, datetime, timedelta
 import sqlite3
 import io
 import base64
@@ -58,6 +58,11 @@ st.markdown("""
         background-color: #ff4444;
         color: white;
         border-color: #cc0000;
+    }
+    /* Định dạng bảng báo cáo */
+    .total-row {
+        font-weight: bold;
+        background-color: #e8f4f8;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -175,6 +180,27 @@ try:
 except:
     pass
 
+# Phần lọc dữ liệu
+st.write("**Lọc dữ liệu báo cáo:**")
+filter_col1, filter_col2, filter_col3 = st.columns(3)
+
+filter_type = "all"
+filter_date = None
+filter_date_from = None
+filter_date_to = None
+
+with filter_col1:
+    filter_type = st.radio("Chọn loại lọc:", ["Tất cả", "Một ngày", "Từ ngày đến ngày"], horizontal=True)
+
+if filter_type == "Một ngày":
+    with filter_col2:
+        filter_date = st.date_input("Chọn ngày:", date.today(), format="DD/MM/YYYY", key="filter_single_date")
+elif filter_type == "Từ ngày đến ngày":
+    with filter_col2:
+        filter_date_from = st.date_input("Từ ngày:", date.today() - timedelta(days=7), format="DD/MM/YYYY", key="filter_from_date")
+    with filter_col3:
+        filter_date_to = st.date_input("Đến ngày:", date.today(), format="DD/MM/YYYY", key="filter_to_date")
+
 if st.button("📥 Tạo Báo Cáo", use_container_width=True):
     # Đọc dữ liệu từ DB
     df = pd.read_sql_query("SELECT * FROM LoiThi", conn)
@@ -182,36 +208,63 @@ if st.button("📥 Tạo Báo Cáo", use_container_width=True):
     if df.empty:
         st.warning("⚠️ Chưa có dữ liệu để xuất.")
     else:
-        # Gom nhóm cộng dồn lỗi theo ngày
-        df_tong_hop = df.groupby('ngay').sum(numeric_only=True).reset_index()
-        df_tong_hop.insert(0, 'STT', range(1, len(df_tong_hop) + 1))
+        # Áp dụng bộ lọc
+        if filter_type == "Một ngày":
+            df = df[df['ngay'] == str(filter_date)]
+        elif filter_type == "Từ ngày đến ngày":
+            df = df[(df['ngay'] >= str(filter_date_from)) & (df['ngay'] <= str(filter_date_to))]
         
-        # Đổi tên cột cho giống mẫu
-        df_tong_hop.columns = [
-            "STT", "Ngày sát hạch", "Không thắt dây an toàn", 
-            "Không bật xi nhan trái/phải", "Không quan sát gương", 
-            "Dừng, đỗ xe sai quy định", "Không chấp hành hiệu lệnh", 
-            "Mở cửa xe không an toàn", "Vượt xe không đảm bảo", 
-            "Quay đầu xe không đúng", "Không quan sát, giảm tốc", 
-            "Lỗi vạch kẻ đường", "Không thực hiện theo yêu cầu", "Lỗi khác"
-        ]
-        
-        # Xuất ra file Excel trên bộ nhớ (để tải về)
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df_tong_hop.to_excel(writer, index=False, sheet_name='TongHopLoi')
-        
-        st.download_button(
-            label="📥 Tải File Excel",
-            data=output.getvalue(),
-            file_name=f"Bao_cao_loi_{date.today()}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True
-        )
-        
-        # Hiển thị preview dữ liệu
-        with st.expander("👁️ Xem trước dữ liệu"):
-            st.dataframe(df_tong_hop, use_container_width=True)
+        if df.empty:
+            st.warning("⚠️ Không có dữ liệu cho khoảng thời gian đã chọn.")
+        else:
+            # Gom nhóm cộng dồn lỗi theo ngày
+            df_tong_hop = df.groupby('ngay').sum(numeric_only=True).reset_index()
+            
+            # Tính tổng cộng
+            total_row = df_tong_hop.sum(numeric_only=True)
+            total_row['ngay'] = 'TỔNG CỘNG'
+            
+            # Thêm hàng tổng cộng vào đầu
+            df_tong_hop = pd.concat([pd.DataFrame([total_row]), df_tong_hop], ignore_index=True)
+            
+            # Thêm cột STT
+            df_tong_hop.insert(0, 'STT', range(0, len(df_tong_hop)))
+            df_tong_hop.loc[0, 'STT'] = ''  # Hàng tổng không có STT
+            
+            # Reset STT cho các dòng khác
+            for i in range(1, len(df_tong_hop)):
+                df_tong_hop.loc[i, 'STT'] = i
+            
+            # Đổi tên cột
+            df_tong_hop.columns = [
+                "STT", "Ngày sát hạch", "Không thắt dây an toàn", 
+                "Không bật xi nhan trái/phải", "Không quan sát gương", 
+                "Dừng, đỗ xe sai quy định", "Không chấp hành hiệu lệnh", 
+                "Mở cửa xe không an toàn", "Vượt xe không đảm bảo", 
+                "Quay đầu xe không đúng", "Không quan sát, giảm tốc", 
+                "Lỗi vạch kẻ đường", "Không thực hiện theo yêu cầu", "Lỗi khác"
+            ]
+            
+            # Chuyển các cột lỗi thành số nguyên (trừ hàng tổng)
+            for col in df_tong_hop.columns[2:]:
+                df_tong_hop[col] = df_tong_hop[col].astype('Int64')
+            
+            # Xuất ra file Excel trên bộ nhớ (để tải về)
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                df_tong_hop.to_excel(writer, index=False, sheet_name='TongHopLoi')
+            
+            st.download_button(
+                label="📥 Tải File Excel",
+                data=output.getvalue(),
+                file_name=f"Bao_cao_loi_{date.today()}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
+            
+            # Hiển thị preview dữ liệu
+            with st.expander("👁️ Xem trước dữ liệu"):
+                st.dataframe(df_tong_hop, use_container_width=True)
 
 # 4. Phần quản lý dữ liệu (tùy chọn)
 with st.expander("⚙️ Quản Lý Dữ Liệu"):
