@@ -25,15 +25,6 @@ st.markdown("""
         font-size: 16px;
         font-weight: bold;
     }
-    .stCheckbox {
-        padding: 8px 0;
-    }
-    .stCheckbox label {
-        font-size: 15px;
-    }
-    .stDateInput input {
-        font-size: 16px;
-    }
     h1 {
         font-size: 24px;
         text-align: center;
@@ -41,11 +32,33 @@ st.markdown("""
     h2 {
         font-size: 18px;
     }
-    /* Giảm khoảng cách giữa các phần tử */
-    .stForm {
-        border: 1px solid #ddd;
-        padding: 10px;
-        border-radius: 5px;
+    /* Grid cho các nút bấm lỗi */
+    .error-button-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin-bottom: 15px;
+    }
+    .error-button {
+        padding: 12px;
+        border: 2px solid #ddd;
+        border-radius: 8px;
+        background-color: #f0f0f0;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 600;
+        text-align: center;
+        transition: all 0.3s ease;
+        user-select: none;
+    }
+    .error-button:hover {
+        border-color: #0066cc;
+        background-color: #e6f0ff;
+    }
+    .error-button.active {
+        background-color: #ff4444;
+        color: white;
+        border-color: #cc0000;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -53,7 +66,6 @@ st.markdown("""
 # Hàm phát âm thanh thông báo
 def play_sound():
     """Phát âm thanh thông báo khi lưu thành công"""
-    # Tạo âm thanh beep đơn giản bằng HTML5 Audio
     sound_html = """
     <audio autoplay>
         <source src="data:audio/wav;base64,UklGRiYAAABXQVZFZm10IBAAAAABAAEAQB8AAAB9AAACABAAZGF0YQIAAAAAAA==" type="audio/wav">
@@ -76,15 +88,12 @@ cols_sql = ", ".join([f"{col} INTEGER" for col in columns])
 c.execute(f"CREATE TABLE IF NOT EXISTS LoiThi (ngay TEXT, {cols_sql})")
 conn.commit()
 
-# Khởi tạo session state để theo dõi trạng thái form
-if "form_submitted" not in st.session_state:
-    st.session_state.form_submitted = False
+# Khởi tạo session state cho việc theo dõi các lỗi được chọn
+if "selected_errors" not in st.session_state:
+    st.session_state.selected_errors = set()
 
-# Nếu form vừa được submit, reset tất cả checkbox keys
-if st.session_state.form_submitted:
-    for idx in range(len(columns)):
-        st.session_state[f"loi_{idx}"] = False
-    st.session_state.form_submitted = False
+if "save_success" not in st.session_state:
+    st.session_state.save_success = False
 
 # 2. Giao diện nhập liệu
 st.title("🚗 Tích Lỗi Học Viên")
@@ -92,31 +101,44 @@ st.title("🚗 Tích Lỗi Học Viên")
 # Chọn ngày
 ngay_sat_hach = st.date_input("📅 Ngày sát hạch", date.today(), format="DD/MM/YYYY")
 
-# Form tích lỗi với 2 cột để tiết kiệm không gian
-st.write("**✓ Tích vào các lỗi học viên mắc phải:**")
+# Form tích lỗi với nút bấm
+st.write("**✓ Tích vào các lỗi học viên mắc phải (nhấn để chọn/bỏ chọn):**")
 
-with st.form("form_loi"):
-    # Chia thành 2 cột trên mobile
-    col1, col2 = st.columns(2)
-    
-    loi_values = []
-    for idx, col_name in enumerate(columns):
-        # Phân bố đều các checkbox vào 2 cột
-        target_col = col1 if idx % 2 == 0 else col2
-        with target_col:
-            display_text = col_name.replace("_", " ")
-            # Sử dụng session state để quản lý trạng thái checkbox
-            loi_values.append(int(st.checkbox(display_text, key=f"loi_{idx}")))
-    
-    col_btn1, col_btn2 = st.columns(2)
-    
-    with col_btn1:
-        submit = st.form_submit_button("💾 Lưu", use_container_width=True)
-    
-    with col_btn2:
-        reset_btn = st.form_submit_button("🔄 Xóa", use_container_width=True)
-    
-    if submit:
+# Hiển thị thông báo nếu vừa lưu thành công
+if st.session_state.save_success:
+    st.success("✅ Đã lưu thành công!", icon="✅")
+    st.balloons()
+    st.session_state.save_success = False
+
+# Tạo grid cho các nút bấm lỗi
+cols = st.columns(2)
+
+for idx, col_name in enumerate(columns):
+    col = cols[idx % 2]
+    with col:
+        display_text = col_name.replace("_", " ")
+        # Tạo nút bấm động với màu sắc thay đổi
+        is_selected = idx in st.session_state.selected_errors
+        button_color = "🔴" if is_selected else "⚪"
+        
+        if st.button(f"{button_color} {display_text}", key=f"error_btn_{idx}", use_container_width=True):
+            # Toggle lỗi
+            if idx in st.session_state.selected_errors:
+                st.session_state.selected_errors.remove(idx)
+            else:
+                st.session_state.selected_errors.add(idx)
+            st.rerun()
+
+# Các nút hành động
+st.divider()
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    if st.button("💾 Lưu", use_container_width=True):
+        # Tạo mảng lỗi
+        loi_values = [1 if idx in st.session_state.selected_errors else 0 for idx in range(len(columns))]
+        
+        # Lưu vào database
         placeholders = ", ".join(["?"] * (len(columns) + 1))
         c.execute(f"INSERT INTO LoiThi VALUES ({placeholders})", [str(ngay_sat_hach)] + loi_values)
         conn.commit()
@@ -124,21 +146,20 @@ with st.form("form_loi"):
         # Phát âm thanh
         play_sound()
         
-        # Hiển thị thông báo thành công
-        st.success("✅ Đã lưu thành công!")
-        st.balloons()
+        # Reset lỗi đã chọn
+        st.session_state.selected_errors = set()
+        st.session_state.save_success = True
         
-        # Đánh dấu form đã submit để reset ở lần rerun tiếp theo
-        st.session_state.form_submitted = True
-        
-        # Rerun để reset form
         st.rerun()
-    
-    if reset_btn:
-        # Xóa tất cả checkbox
-        for idx in range(len(columns)):
-            st.session_state[f"loi_{idx}"] = False
+
+with col2:
+    if st.button("🔄 Xóa", use_container_width=True):
+        st.session_state.selected_errors = set()
         st.rerun()
+
+with col3:
+    # Hiển thị số lỗi được chọn
+    st.metric("Số lỗi chọn", len(st.session_state.selected_errors))
 
 # 3. Xuất báo cáo tổng hợp ra Excel
 st.divider()
