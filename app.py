@@ -220,9 +220,14 @@ if st.button("📥 Tạo Báo Cáo", use_container_width=True):
             # Gom nhóm cộng dồn lỗi theo ngày
             df_tong_hop = df.groupby('ngay').sum(numeric_only=True).reset_index()
             
-            # Tính tổng cộng
-            total_row = df_tong_hop.sum(numeric_only=True)
+            # Tính tổng cộng (chỉ lấy các cột số, không lấy cột ngay)
+            total_row = {}
             total_row['ngay'] = 'TỔNG CỘNG'
+            
+            # Tính tổng cho từng cột lỗi
+            for col in df_tong_hop.columns:
+                if col != 'ngay':
+                    total_row[col] = df_tong_hop[col].sum()
             
             # Thêm hàng tổng cộng vào đầu
             df_tong_hop = pd.concat([pd.DataFrame([total_row]), df_tong_hop], ignore_index=True)
