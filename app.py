@@ -228,12 +228,9 @@ if st.button("📥 Tạo Báo Cáo", use_container_width=True):
             df_tong_hop = pd.concat([pd.DataFrame([total_row]), df_tong_hop], ignore_index=True)
             
             # Thêm cột STT
-            df_tong_hop.insert(0, 'STT', range(0, len(df_tong_hop)))
-            df_tong_hop.loc[0, 'STT'] = ''  # Hàng tổng không có STT
-            
-            # Reset STT cho các dòng khác
-            for i in range(1, len(df_tong_hop)):
-                df_tong_hop.loc[i, 'STT'] = i
+            # Create STT as strings so we can put an empty string for the total row without dtype conflicts
+            stt = [''] + list(range(1, len(df_tong_hop)))
+            df_tong_hop.insert(0, 'STT', stt)
             
             # Đổi tên cột
             df_tong_hop.columns = [
