@@ -76,10 +76,6 @@ cols_sql = ", ".join([f"{col} INTEGER" for col in columns])
 c.execute(f"CREATE TABLE IF NOT EXISTS LoiThi (ngay TEXT, {cols_sql})")
 conn.commit()
 
-# Khởi tạo session state cho form
-if "reset_form" not in st.session_state:
-    st.session_state.reset_form = False
-
 # 2. Giao diện nhập liệu
 st.title("🚗 Tích Lỗi Học Viên")
 
@@ -99,8 +95,8 @@ with st.form("form_loi"):
         target_col = col1 if idx % 2 == 0 else col2
         with target_col:
             display_text = col_name.replace("_", " ")
-            # Sử dụng session state để reset form
-            loi_values.append(int(st.checkbox(display_text, key=f"loi_{idx}", value=not st.session_state.reset_form)))
+            # Mặc định checkbox luôn unchecked (False)
+            loi_values.append(int(st.checkbox(display_text, key=f"loi_{idx}", value=False)))
     
     col_btn1, col_btn2 = st.columns(2)
     
