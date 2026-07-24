@@ -32,23 +32,22 @@ st.markdown("""
     h2 {
         font-size: 18px;
     }
-    /* Grid cho các nút bấm lỗi */
-    .error-button-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 8px;
-        margin-bottom: 15px;
+    /* Nút tích lỗi sát lề trái */
+    .error-button-container {
+        width: 100%;
+        margin-bottom: 8px;
     }
     .error-button {
+        width: 100%;
         padding: 12px;
         border: 2px solid #ddd;
-        border-radius: 8px;
+        border-radius: 5px;
         background-color: #f0f0f0;
         cursor: pointer;
-        font-size: 14px;
+        font-size: 15px;
         font-weight: 600;
-        text-align: center;
-        transition: all 0.3s ease;
+        text-align: left;
+        transition: all 0.2s ease;
         user-select: none;
     }
     .error-button:hover {
@@ -84,6 +83,14 @@ columns = [
     "Vuot_xe_khong_an_toan", "Quay_dau_sai_quy_dinh", "Khong_giam_toc_do", 
     "Khong_chap_hanh_vach_ke", "Khong_nghe_sat_hach_vien", "Loi_khac"
 ]
+
+columns_display = [
+    "Không thắt dây an toàn", "Không bật xi nhan trái/phải", "Không quan sát gương",
+    "Dừng, đỗ xe sai quy định", "Không chấp hành hiệu lệnh", "Mở cửa xe không an toàn",
+    "Vượt xe không đảm bảo", "Quay đầu xe không đúng", "Không quan sát, giảm tốc",
+    "Lỗi vạch kẻ đường", "Không thực hiện theo yêu cầu", "Lỗi khác"
+]
+
 cols_sql = ", ".join([f"{col} INTEGER" for col in columns])
 c.execute(f"CREATE TABLE IF NOT EXISTS LoiThi (ngay TEXT, {cols_sql})")
 conn.commit()
@@ -110,24 +117,19 @@ if st.session_state.save_success:
     st.balloons()
     st.session_state.save_success = False
 
-# Tạo grid cho các nút bấm lỗi
-cols = st.columns(2)
-
-for idx, col_name in enumerate(columns):
-    col = cols[idx % 2]
-    with col:
-        display_text = col_name.replace("_", " ")
-        # Tạo nút bấm động với màu sắc thay đổi
-        is_selected = idx in st.session_state.selected_errors
-        button_color = "🔴" if is_selected else "⚪"
-        
-        if st.button(f"{button_color} {display_text}", key=f"error_btn_{idx}", use_container_width=True):
-            # Toggle lỗi
-            if idx in st.session_state.selected_errors:
-                st.session_state.selected_errors.remove(idx)
-            else:
-                st.session_state.selected_errors.add(idx)
-            st.rerun()
+# Tạo các nút bấm lỗi sát lề trái
+for idx, display_text in enumerate(columns_display):
+    # Tạo nút bấm động với màu sắc thay đổi
+    is_selected = idx in st.session_state.selected_errors
+    button_color = "🔴" if is_selected else "⚪"
+    
+    if st.button(f"{button_color} {display_text}", key=f"error_btn_{idx}", use_container_width=True):
+        # Toggle lỗi
+        if idx in st.session_state.selected_errors:
+            st.session_state.selected_errors.remove(idx)
+        else:
+            st.session_state.selected_errors.add(idx)
+        st.rerun()
 
 # Các nút hành động
 st.divider()
@@ -173,7 +175,7 @@ try:
 except:
     pass
 
-if st.button("📥 Tạo File Excel", use_container_width=True):
+if st.button("📥 Tạo Báo Cáo", use_container_width=True):
     # Đọc dữ liệu từ DB
     df = pd.read_sql_query("SELECT * FROM LoiThi", conn)
     
@@ -213,19 +215,35 @@ if st.button("📥 Tạo File Excel", use_container_width=True):
 
 # 4. Phần quản lý dữ liệu (tùy chọn)
 with st.expander("⚙️ Quản Lý Dữ Liệu"):
+    st.subheader("Xem Dữ Liệu")
     col_manage1, col_manage2 = st.columns(2)
     
     with col_manage1:
         if st.button("🔍 Xem Tất Cả Dữ Liệu", use_container_width=True):
             df_view = pd.read_sql_query("SELECT * FROM LoiThi", conn)
             if not df_view.empty:
-                st.dataframe(df_view, use_container_width=True)
+                # Đổi tên cột cho hiển thị
+                df_view_display = df_view.copy()
+                df_view_display.columns = [
+                    "Ngày sát hạch", "Không thắt dây an toàn", 
+                    "Không bật xi nhan trái/phải", "Không quan sát gương", 
+                    "Dừng, đỗ xe sai quy định", "Không chấp hành hiệu lệnh", 
+                    "Mở cửa xe không an toàn", "Vượt xe không đảm bảo", 
+                    "Quay đầu xe không đúng", "Không quan sát, giảm tốc", 
+                    "Lỗi vạch kẻ đường", "Không thực hiện theo yêu cầu", "Lỗi khác"
+                ]
+                st.dataframe(df_view_display, use_container_width=True)
             else:
                 st.info("Không có dữ liệu")
     
     with col_manage2:
+        st.subheader("Xóa Dữ Liệu")
+        password_input = st.text_input("Nhập mật khẩu:", type="password", key="del_password")
         if st.button("🗑️ Xóa Tất Cả", use_container_width=True):
-            c.execute("DELETE FROM LoiThi")
-            conn.commit()
-            st.success("✅ Đã xóa tất cả dữ liệu")
-            st.rerun()
+            if password_input == "123":
+                c.execute("DELETE FROM LoiThi")
+                conn.commit()
+                st.success("✅ Đã xóa tất cả dữ liệu")
+                st.rerun()
+            else:
+                st.error("❌ Mật khẩu không chính xác!")
