@@ -149,46 +149,14 @@ for idx, display_text in enumerate(columns_display):
 
         # Phát âm thanh và hiển thị thông báo nhỏ
         play_sound()
+        # Reset selection so the UI returns to initial state for next input
+        st.session_state.selected_errors = set()
         st.session_state.save_success = True
         st.rerun()
 
-# Các nút hành động
+# Các nút hành động: bỏ nút Lưu và Xóa (tự động lưu khi chọn lỗi); chỉ hiển thị số lỗi chọn
 st.divider()
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    if st.button("💾 Lưu", use_container_width=True):
-        # Tạo dữ liệu hàng
-        loi_values = [1 if idx in st.session_state.selected_errors else 0 for idx in range(len(columns_display))]
-        row_data = {"Ngày": str(ngay_sat_hach)}
-        
-        for i, col in enumerate(columns_display):
-            row_data[col] = loi_values[i]
-        
-        # Đọc dữ liệu cũ
-        df = load_data()
-        
-        # Thêm hàng mới
-        df = pd.concat([df, pd.DataFrame([row_data])], ignore_index=True)
-        
-        # Lưu vào CSV
-        save_data(df)
-        
-        # Phát âm thanh
-        play_sound()
-        
-        # Reset
-        st.session_state.selected_errors = set()
-        st.session_state.save_success = True
-        st.rerun()
-
-with col2:
-    if st.button("🔄 Xóa", use_container_width=True):
-        st.session_state.selected_errors = set()
-        st.rerun()
-
-with col3:
-    st.metric("Số lỗi chọn", len(st.session_state.selected_errors))
+st.metric("Số lỗi chọn", len(st.session_state.selected_errors))
 
 # ===== XUẤT BÁO CÁO =====
 st.divider()
