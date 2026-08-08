@@ -383,4 +383,24 @@ with st.expander("⚙️ Quản Lý Dữ Liệu"):
     col_manage1, col_manage2 = st.columns(2)
     
     with col_manage1:
-        if st.button("🔍 Xem Tất Cả Dữ Liệ
+        if st.button("🔍 Xem Tất Cả Dữ Liệu", use_container_width=True):
+            df_view = load_data()
+            if not df_view.empty:
+                st.dataframe(df_view, use_container_width=True)
+            else:
+                st.info("Không có dữ liệu")
+    
+    with col_manage2:
+        st.subheader("Xóa Dữ Liệu")
+        password_input = st.text_input("Nhập mật khẩu:", type="password", key="del_password")
+        if st.button("🗑️ Xóa Tất Cả", use_container_width=True):
+            if password_input == "Admin@1234":
+                # Xóa file CSV
+                if os.path.exists(CSV_FILE):
+                    os.remove(CSV_FILE)
+                    st.success("✅ Đã xóa tất cả dữ liệu")
+                    st.rerun()
+                else:
+                    st.info("Không có dữ liệu để xóa")
+            else:
+                st.error("❌ Mật khẩu không chính xác!")
