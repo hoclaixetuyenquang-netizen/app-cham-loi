@@ -126,10 +126,30 @@ for idx, display_text in enumerate(columns_display):
     button_color = "🔴" if is_selected else "⚪"
     
     if st.button(f"{button_color} {display_text}", key=f"error_btn_{idx}", use_container_width=True):
+        # Toggle selection
         if idx in st.session_state.selected_errors:
             st.session_state.selected_errors.remove(idx)
         else:
             st.session_state.selected_errors.add(idx)
+
+        # Auto-save current selections to CSV immediately after toggle
+        loi_values = [1 if i in st.session_state.selected_errors else 0 for i in range(len(columns_display))]
+        row_data = {"Ngày": str(ngay_sat_hach)}
+        for i, col in enumerate(columns_display):
+            row_data[col] = loi_values[i]
+
+        # Đọc dữ liệu cũ
+        df = load_data()
+
+        # Thêm hàng mới
+        df = pd.concat([df, pd.DataFrame([row_data])], ignore_index=True)
+
+        # Lưu vào CSV
+        save_data(df)
+
+        # Phát âm thanh và hiển thị thông báo nhỏ
+        play_sound()
+        st.session_state.save_success = True
         st.rerun()
 
 # Các nút hành động
@@ -363,24 +383,4 @@ with st.expander("⚙️ Quản Lý Dữ Liệu"):
     col_manage1, col_manage2 = st.columns(2)
     
     with col_manage1:
-        if st.button("🔍 Xem Tất Cả Dữ Liệu", use_container_width=True):
-            df_view = load_data()
-            if not df_view.empty:
-                st.dataframe(df_view, use_container_width=True)
-            else:
-                st.info("Không có dữ liệu")
-    
-    with col_manage2:
-        st.subheader("Xóa Dữ Liệu")
-        password_input = st.text_input("Nhập mật khẩu:", type="password", key="del_password")
-        if st.button("🗑️ Xóa Tất Cả", use_container_width=True):
-            if password_input == "Admin@1234":
-                # Xóa file CSV
-                if os.path.exists(CSV_FILE):
-                    os.remove(CSV_FILE)
-                    st.success("✅ Đã xóa tất cả dữ liệu")
-                    st.rerun()
-                else:
-                    st.info("Không có dữ liệu để xóa")
-            else:
-                st.error("❌ Mật khẩu không chính xác!")
+        if st.button("🔍 Xem Tất Cả Dữ Liệ
