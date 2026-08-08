@@ -191,15 +191,15 @@ elif filter_type == "Từ ngày đến ngày":
 # Danh sách tên lỗi đầy đủ
 full_error_names = [
     "Không thắt dây an toàn",
-    "Không bật xi nhan trái/phải",
+    "Không bật xi nhan trái xuất phát hoặc xi nhan phải kết thúc",
     "Không quan sát gương",
     "Dừng, đỗ xe sai quy định",
-    "Không chấp hành hiệu lệnh",
+    "Không chấp hành hiệu lệnh biển báo",
     "Mở cửa xe không an toàn",
     "Vượt xe không đảm bảo",
-    "Quay đầu xe không đúng",
-    "Không quan sát, giảm tốc độ để hoạc dừng các trương hợp theo quy định",
-    "Lỗi vạch kẻ đường",
+    "Quay đầu xe không đúng quy định",
+    "Không quan sát, giảm tốc độ hoặc dừng lại trong cấc trường hợp theo quy định",
+    "Lỗi không chấp hành vạch kẻ đường",
     "Không thực hiện theo yêu cầu của Sát hạch viên",
     "Lỗi khác"
 ]
@@ -313,6 +313,16 @@ def create_report_excel(df_tong_hop):
 
 if st.button("📥 Tạo Báo Cáo", use_container_width=True):
     df = load_data()
+    # giữ tương thích với CSV cũ: đổi tên cột cũ -> tên chính thức mới nếu cần
+    rename_map = {
+        "Không bật xi nhan trái/phải": "Không bật xi nhan trái xuất phát hoặc xi nhan phải kết thúc",
+        "Không chấp hành hiệu lệnh": "Không chấp hành hiệu lệnh biển báo",
+        "Quay đầu xe không đúng": "Quay đầu xe không đúng quy định",
+        "Không quan sát, giảm tốc": "Không quan sát, giảm tốc độ hoặc dừng lại trong cấc trường hợp theo quy định",
+        "Lỗi vạch kẻ đường": "Lỗi không chấp hành vạch kẻ đường",
+        "Không thực hiện theo yêu cầu": "Không thực hiện theo yêu cầu của Sát hạch viên"
+    }
+    df = df.rename(columns=rename_map)
     
     if df.empty:
         st.warning("⚠️ Chưa có dữ liệu để xuất.")
