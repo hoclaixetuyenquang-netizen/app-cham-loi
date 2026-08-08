@@ -5,7 +5,8 @@ import io
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
-from supabase import create_client, Client
+import gspread
+from google.oauth2.service_account import Credentials
 
 # Cấu hình trang cho di động
 st.set_page_config(
@@ -79,30 +80,27 @@ def play_sound():
     """
     st.markdown(sound_html, unsafe_allow_html=True)
 
-# ===== SUPABASE CONNECTION =====
+# ===== GOOGLE SHEETS CONNECTION =====
 @st.cache_resource
-def get_supabase_client():
-    """Kết nối tới Supabase"""
+def get_gsheet():
+    """Kết nối tới Google Sheets"""
     try:
-        url = st.secrets["SUPABASE_URL"]
-        key = st.secrets["SUPABASE_KEY"]
-        supabase: Client = create_client(url, key)
-        return supabase
+        credentials = Credentials.from_service_account_info(
+            st.secrets["gcp_service_account"],
+            scopes=["https://www.googleapis.com/auth/spreadsheets"]
+        )
+        client = gspread.authorize(credentials)
+        # Mở sheet tên "chamLoi" - nếu chưa có thì sẽ báo lỗi
+        sheet = client.open("chamLoi").worksheet("data")
+        return sheet
     except Exception as e:
-        st.error(f"❌ Lỗi kết nối Supabase: {e}")
-        st.info("📌 Bạn cần setup `.streamlit/secrets.toml` với SUPABASE_URL và SUPABASE_KEY")
+        st.error(f"❌ Lỗi kết nối Google Sheets: {e}")
+        st.info("📌 Hướng dẫn: Bạn cần tạo Google Sheet tên 'chamLoi' và cấu hình credentials")
         return None
 
-supabase = get_supabase_client()
+sheet = get_gsheet()
 
 # Danh sách cột lỗi
-columns = [
-    "Khong_that_day_an_toan", "Khong_bat_xi_nhan", "Khong_quan_sat_guong", 
-    "Dung_do_xe_sai_quy_dinh", "Khong_chap_hanh_bien_bao", "Mo_cua_xe_khong_an_toan", 
-    "Vuot_xe_khong_an_toan", "Quay_dau_sai_quy_dinh", "Khong_giam_toc_do", 
-    "Khong_chap_hanh_vach_ke", "Khong_nghe_sat_hach_vien", "Loi_khac"
-]
-
 columns_display = [
     "Không thắt dây an toàn", "Không bật xi nhan trái/phải", "Không quan sát gương",
     "Dừng, đỗ xe sai quy định", "Không chấp hành hiệu lệnh", "Mở cửa xe không an toàn",
@@ -150,20 +148,16 @@ col1, col2, col3 = st.columns(3)
 
 with col1:
     if st.button("💾 Lưu", use_container_width=True):
-        if not supabase:
-            st.error("❌ Không thể kết nối Supabase")
+        if not sheet:
+            st.error("❌ Không thể kết nối Google Sheets")
         else:
             try:
-                # Tạo object dữ liệu
-                loi_values = [1 if idx in st.session_state.selected_errors else 0 for idx in range(len(columns))]
+                # Tạo dữ liệu hàng
+                loi_values = [1 if idx in st.session_state.selected_errors else 0 for idx in range(len(columns_display))]
+                row_data = [str(ngay_sat_hach)] + loi_values
                 
-                data = {
-                    "ngay": str(ngay_sat_hach),
-                    **{columns[i]: loi_values[i] for i in range(len(columns))}
-                }
-                
-                # Lưu vào Supabase
-                response = supabase.table("loi_thi").insert([data]).execute()
+                # Lưu vào Google Sheet
+                sheet.append_row(row_data)
                 
                 # Phát âm thanh
                 play_sound()
@@ -188,13 +182,12 @@ st.divider()
 st.subheader("📊 Báo Cáo Tổng Hợp")
 
 # Thống kê nhanh
-if supabase:
+if sheet:
     try:
-        response = supabase.table("loi_thi").select("*").execute()
-        df_all = pd.DataFrame(response.data) if response.data else pd.DataFrame()
-        
-        if not df_all.empty:
-            st.info(f"📈 Tổng số lần ghi nhận: **{len(df_all)}** | Số ngày: **{df_all['ngay'].nunique()}**")
+        data = sheet.get_all_records()
+        if data:
+            df_all = pd.DataFrame(data)
+            st.info(f"📈 Tổng số lần ghi nhận: **{len(df_all)}** | Số ngày: **{df_all['Ngày'].nunique()}**")
     except:
         pass
 
@@ -333,38 +326,39 @@ def create_report_excel(df_tong_hop):
 def format_date(date_str):
     """Chuyển đổi ngày sang định dạng DD/MM/YYYY"""
     try:
-        date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+        date_obj = datetime.strptime(str(date_str), "%Y-%m-%d")
         return date_obj.strftime("%d/%m/%Y")
     except:
         return date_str
 
 if st.button("📥 Tạo Báo Cáo", use_container_width=True):
-    if not supabase:
-        st.error("❌ Không thể kết nối Supabase")
+    if not sheet:
+        st.error("❌ Không thể kết nối Google Sheets")
     else:
         try:
-            # Đọc dữ liệu từ Supabase
-            response = supabase.table("loi_thi").select("*").execute()
-            df = pd.DataFrame(response.data) if response.data else pd.DataFrame()
-            
-            if df.empty:
+            # Đọc dữ liệu từ Google Sheet
+            data = sheet.get_all_records()
+            if not data:
                 st.warning("⚠️ Chưa có dữ liệu để xuất.")
             else:
+                df = pd.DataFrame(data)
+                
                 # Áp dụng bộ lọc
                 if filter_type == "Một ngày":
-                    df = df[df['ngay'] == str(filter_date)]
+                    df = df[df['Ngày'] == str(filter_date)]
                 elif filter_type == "Từ ngày đến ngày":
-                    df = df[(df['ngay'] >= str(filter_date_from)) & (df['ngay'] <= str(filter_date_to))]
+                    df = df[(df['Ngày'] >= str(filter_date_from)) & (df['Ngày'] <= str(filter_date_to))]
                 
                 if df.empty:
                     st.warning("⚠️ Không có dữ liệu cho khoảng thời gian đã chọn.")
                 else:
                     # Gom nhóm và tính tổng
-                    df_tong_hop = df.groupby('ngay')[columns].sum().reset_index()
+                    numeric_cols = [col for col in df.columns if col != 'Ngày']
+                    df_tong_hop = df.groupby('Ngày')[numeric_cols].sum().reset_index()
                     
                     # Tính tổng cộng
-                    total_row = {'ngay': 'TỔNG CỘNG'}
-                    for col in columns:
+                    total_row = {'Ngày': 'TỔNG CỘNG'}
+                    for col in numeric_cols:
                         total_row[col] = df_tong_hop[col].sum()
                     
                     # Thêm hàng tổng cộng vào đầu
@@ -373,9 +367,6 @@ if st.button("📥 Tạo Báo Cáo", use_container_width=True):
                     # Thêm cột STT
                     stt = [''] + list(range(1, len(df_tong_hop)))
                     df_tong_hop.insert(0, 'STT', stt)
-                    
-                    # Đổi tên cột
-                    df_tong_hop.columns = ['STT', 'Ngày sát hạch'] + full_error_names
                     
                     # Tạo file Excel
                     excel_data = create_report_excel(df_tong_hop)
@@ -391,9 +382,6 @@ if st.button("📥 Tạo Báo Cáo", use_container_width=True):
                     # Hiển thị preview
                     with st.expander("👁️ Xem trước dữ liệu"):
                         df_display = df_tong_hop.copy()
-                        df_display['Ngày sát hạch'] = df_display['Ngày sát hạch'].apply(
-                            lambda x: format_date(x) if x != 'TỔNG CỘNG' else x
-                        )
                         st.dataframe(df_display, use_container_width=True)
         except Exception as e:
             st.error(f"❌ Lỗi tạo báo cáo: {e}")
@@ -405,23 +393,12 @@ with st.expander("⚙️ Quản Lý Dữ Liệu"):
     
     with col_manage1:
         if st.button("🔍 Xem Tất Cả Dữ Liệu", use_container_width=True):
-            if supabase:
+            if sheet:
                 try:
-                    response = supabase.table("loi_thi").select("*").execute()
-                    df_view = pd.DataFrame(response.data) if response.data else pd.DataFrame()
-                    
-                    if not df_view.empty:
-                        # Đổi tên cột
-                        df_view_display = df_view.copy()
-                        df_view_display.columns = ['ID', 'Ngày sát hạch'] + full_error_names
-                        
-                        # Format ngày
-                        df_view_display['Ngày sát hạch'] = df_view_display['Ngày sát hạch'].apply(format_date)
-                        
-                        # Xóa cột ID
-                        df_view_display = df_view_display.drop('ID', axis=1)
-                        
-                        st.dataframe(df_view_display, use_container_width=True)
+                    data = sheet.get_all_records()
+                    if data:
+                        df_view = pd.DataFrame(data)
+                        st.dataframe(df_view, use_container_width=True)
                     else:
                         st.info("Không có dữ liệu")
                 except Exception as e:
@@ -431,10 +408,11 @@ with st.expander("⚙️ Quản Lý Dữ Liệu"):
         st.subheader("Xóa Dữ Liệu")
         password_input = st.text_input("Nhập mật khẩu:", type="password", key="del_password")
         if st.button("🗑️ Xóa Tất Cả", use_container_width=True):
-            if password_input == "123":
-                if supabase:
+            if password_input == "Admin@1234":
+                if sheet:
                     try:
-                        supabase.table("loi_thi").delete().neq("id", -1).execute()
+                        # Xóa tất cả hàng trừ header
+                        sheet.delete_rows(2, sheet.row_count)
                         st.success("✅ Đã xóa tất cả dữ liệu")
                         st.rerun()
                     except Exception as e:
