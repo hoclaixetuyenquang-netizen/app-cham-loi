@@ -237,51 +237,56 @@ full_error_names = [
 ]
 
 def create_report_excel(df_tong_hop):
-    """Tạo file Excel với định dạng theo mẫu"""
+    """Tạo file Excel với định dạng theo mẫu (vị trí cột động, tổng đúng cột)"""
     wb = Workbook()
     ws = wb.active
     ws.title = "TongHopLoi"
-    
-    # Định dạng các kiểu
+
+    # Fonts / styles
     title_font = Font(name='Times New Roman', size=14, bold=True)
     total_font = Font(name='Times New Roman', size=11, bold=True, color="CC0000")
     header_font = Font(name='Times New Roman', size=10, bold=True)
     data_font = Font(name='Times New Roman', size=10)
-    
+
     header_fill = PatternFill(start_color="B4C7E7", end_color="B4C7E7", fill_type="solid")
     total_fill = PatternFill(start_color="E7E6E6", end_color="E7E6E6", fill_type="solid")
-    
+
     center_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-    
+
     border = Border(
         left=Side(style='thin', color="000000"),
         right=Side(style='thin', color="000000"),
         top=Side(style='thin', color="000000"),
         bottom=Side(style='thin', color="000000")
     )
-    
-    # Hàng tiêu đề (Row 1)
-    ws.merge_cells('A1:M1')
+
+    # Hợp nhất tiêu đề theo số cột thực tế
+    last_col_letter = get_column_letter(len(df_tong_hop.columns))
+    ws.merge_cells(f'A1:{last_col_letter}1')
     title_cell = ws['A1']
     title_cell.value = "Số lượng lỗi do sát hạch viên trừ trong phần thi đường trường"
     title_cell.font = title_font
     title_cell.alignment = center_alignment
     ws.row_dimensions[1].height = 30
-    
-    # Hàng tổng cộng (Row 2)
+
+    # Tạo mapping header -> index (1-based Excel columns)
+    header_positions = {col_name: idx + 1 for idx, col_name in enumerate(df_tong_hop.columns)}
+
+    # Hàng tổng cộng (Row 2) — ghi 'TỔNG CỘNG' ở cột A và các giá trị tổng ở đúng vị trí theo header_positions
     total_row_data = df_tong_hop.iloc[0]
-    ws['A2'] = "TỔNG CỘNG"
-    ws['A2'].font = total_font
-    ws['A2'].fill = total_fill
-    ws['A2'].alignment = center_alignment
-    ws['A2'].border = border
-    
-    # Start totals at column 3 (C) to align with STT (A) and Ngày (B)
-    col_idx = 3
-    for col_name in df_tong_hop.columns[2:]:
+    ws.cell(row=2, column=1).value = "TỔNG CỘNG"
+    ws.cell(row=2, column=1).font = total_font
+    ws.cell(row=2, column=1).fill = total_fill
+    ws.cell(row=2, column=1).alignment = center_alignment
+    ws.cell(row=2, column=1).border = border
+
+    # Ghi tổng bắt đầu ở vị trí của mỗi header (bỏ STT và cột ngày nếu có)
+    for col_name in df_tong_hop.columns:
+        if col_name in ('STT',) or 'ngày' in col_name.lower():
+            continue
+        col_idx = header_positions[col_name]
         cell = ws.cell(row=2, column=col_idx)
         value = total_row_data[col_name]
-        # nếu có thể chuyển thành số thì chuyển, không thì để nguyên hoặc 0
         try:
             cell.value = int(value) if pd.notna(value) else 0
         except (ValueError, TypeError):
@@ -290,53 +295,49 @@ def create_report_excel(df_tong_hop):
         cell.fill = total_fill
         cell.alignment = center_alignment
         cell.border = border
-        col_idx += 1
-    
-    # Hàng header (Row 3)
-    col_idx = 1
-    for col_name in df_tong_hop.columns:
+
+    # Hàng header (Row 3) theo header_positions (đảm bảo đúng thứ tự)
+    for col_name, col_idx in header_positions.items():
         cell = ws.cell(row=3, column=col_idx)
         cell.value = col_name
         cell.font = header_font
         cell.fill = header_fill
         cell.alignment = center_alignment
         cell.border = border
-        col_idx += 1
-    
+
     ws.row_dimensions[3].height = 40
-    
+
     # Dữ liệu (từ Row 4 trở đi)
     for row_idx, (_, row_data) in enumerate(df_tong_hop.iloc[1:].iterrows(), start=4):
-        col_idx = 1
-        for col_name in df_tong_hop.columns:
+        for col_name, col_idx in header_positions.items():
             cell = ws.cell(row=row_idx, column=col_idx)
             value = row_data[col_name]
-            
             if col_name == 'STT':
                 cell.value = value if value != '' else ''
-            # kiểm tra tên cột chứa 'Ngày' (thích nghi nhiều tên khác nhau)
             elif 'ngày' in col_name.lower():
                 cell.value = value
             else:
-                # chuyển số an toàn
                 try:
                     cell.value = int(value) if pd.notna(value) else 0
                 except (ValueError, TypeError):
-                    # nếu không chuyển được, ghi nguyên giá trị (hoặc 0 tùy ý)
                     cell.value = value if pd.notna(value) else 0
-            
             cell.font = data_font
             cell.alignment = center_alignment
             cell.border = border
-            col_idx += 1
-    
-    # Điều chỉnh độ rộng cột
-    ws.column_dimensions['A'].width = 8
-    ws.column_dimensions['B'].width = 15
-    for col_idx in range(3, 15):
-        ws.column_dimensions[get_column_letter(col_idx)].width = 18
-    
-    # Lưu vào BytesIO
+
+    # Đặt chiều rộng cột động: STT nhỏ, Ngày vừa, các cột còn lại rộng hơn
+    if 'STT' in header_positions:
+        ws.column_dimensions[get_column_letter(header_positions['STT'])].width = 8
+    # tìm cột ngày (bất kỳ tên chứa 'ngày')
+    for name, idx in header_positions.items():
+        if 'ngày' in name.lower():
+            ws.column_dimensions[get_column_letter(idx)].width = 15
+            break
+    for name, idx in header_positions.items():
+        if name not in ('STT',) and 'ngày' not in name.lower():
+            ws.column_dimensions[get_column_letter(idx)].width = 18
+
+    # Lưu vào BytesIO và trả về bytes
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
