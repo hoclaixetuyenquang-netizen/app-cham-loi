@@ -5,8 +5,7 @@ import io
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
-import gspread
-from google.oauth2.service_account import Credentials
+import os
 
 # Cấu hình trang cho di động
 st.set_page_config(
@@ -35,7 +34,6 @@ st.markdown("""
     h2 {
         font-size: 18px;
     }
-    /* Nút tích lỗi sát lề trái */
     .error-button-container {
         width: 100%;
         margin-bottom: 8px;
@@ -62,7 +60,6 @@ st.markdown("""
         color: white;
         border-color: #cc0000;
     }
-    /* Định dạng bảng báo cáo */
     .total-row {
         font-weight: bold;
         background-color: #e8f4f8;
@@ -80,25 +77,18 @@ def play_sound():
     """
     st.markdown(sound_html, unsafe_allow_html=True)
 
-# ===== GOOGLE SHEETS CONNECTION =====
-@st.cache_resource
-def get_gsheet():
-    """Kết nối tới Google Sheets"""
-    try:
-        credentials = Credentials.from_service_account_info(
-            st.secrets["gcp_service_account"],
-            scopes=["https://www.googleapis.com/auth/spreadsheets"]
-        )
-        client = gspread.authorize(credentials)
-        # Mở sheet tên "chamLoi" - nếu chưa có thì sẽ báo lỗi
-        sheet = client.open("chamLoi").worksheet("data")
-        return sheet
-    except Exception as e:
-        st.error(f"❌ Lỗi kết nối Google Sheets: {e}")
-        st.info("📌 Hướng dẫn: Bạn cần tạo Google Sheet tên 'chamLoi' và cấu hình credentials")
-        return None
+# ===== ĐỌC/GHI FILE CSV =====
+CSV_FILE = "dulieu_loi.csv"
 
-sheet = get_gsheet()
+def load_data():
+    """Đọc dữ liệu từ CSV"""
+    if os.path.exists(CSV_FILE):
+        return pd.read_csv(CSV_FILE)
+    return pd.DataFrame()
+
+def save_data(df):
+    """Lưu dữ liệu vào CSV"""
+    df.to_csv(CSV_FILE, index=False, encoding='utf-8-sig')
 
 # Danh sách cột lỗi
 columns_display = [
@@ -148,26 +138,29 @@ col1, col2, col3 = st.columns(3)
 
 with col1:
     if st.button("💾 Lưu", use_container_width=True):
-        if not sheet:
-            st.error("❌ Không thể kết nối Google Sheets")
-        else:
-            try:
-                # Tạo dữ liệu hàng
-                loi_values = [1 if idx in st.session_state.selected_errors else 0 for idx in range(len(columns_display))]
-                row_data = [str(ngay_sat_hach)] + loi_values
-                
-                # Lưu vào Google Sheet
-                sheet.append_row(row_data)
-                
-                # Phát âm thanh
-                play_sound()
-                
-                # Reset
-                st.session_state.selected_errors = set()
-                st.session_state.save_success = True
-                st.rerun()
-            except Exception as e:
-                st.error(f"❌ Lỗi lưu dữ liệu: {e}")
+        # Tạo dữ liệu hàng
+        loi_values = [1 if idx in st.session_state.selected_errors else 0 for idx in range(len(columns_display))]
+        row_data = {"Ngày": str(ngay_sat_hach)}
+        
+        for i, col in enumerate(columns_display):
+            row_data[col] = loi_values[i]
+        
+        # Đọc dữ liệu cũ
+        df = load_data()
+        
+        # Thêm hàng mới
+        df = pd.concat([df, pd.DataFrame([row_data])], ignore_index=True)
+        
+        # Lưu vào CSV
+        save_data(df)
+        
+        # Phát âm thanh
+        play_sound()
+        
+        # Reset
+        st.session_state.selected_errors = set()
+        st.session_state.save_success = True
+        st.rerun()
 
 with col2:
     if st.button("🔄 Xóa", use_container_width=True):
@@ -182,14 +175,9 @@ st.divider()
 st.subheader("📊 Báo Cáo Tổng Hợp")
 
 # Thống kê nhanh
-if sheet:
-    try:
-        data = sheet.get_all_records()
-        if data:
-            df_all = pd.DataFrame(data)
-            st.info(f"📈 Tổng số lần ghi nhận: **{len(df_all)}** | Số ngày: **{df_all['Ngày'].nunique()}**")
-    except:
-        pass
+df_all = load_data()
+if not df_all.empty:
+    st.info(f"📈 Tổng số lần ghi nhận: **{len(df_all)}** | Số ngày: **{df_all['Ngày'].nunique()}**")
 
 # Phần lọc dữ liệu
 st.write("**Lọc dữ liệu báo cáo:**")
@@ -323,68 +311,51 @@ def create_report_excel(df_tong_hop):
     output.seek(0)
     return output.getvalue()
 
-def format_date(date_str):
-    """Chuyển đổi ngày sang định dạng DD/MM/YYYY"""
-    try:
-        date_obj = datetime.strptime(str(date_str), "%Y-%m-%d")
-        return date_obj.strftime("%d/%m/%Y")
-    except:
-        return date_str
-
 if st.button("📥 Tạo Báo Cáo", use_container_width=True):
-    if not sheet:
-        st.error("❌ Không thể kết nối Google Sheets")
+    df = load_data()
+    
+    if df.empty:
+        st.warning("⚠️ Chưa có dữ liệu để xuất.")
     else:
-        try:
-            # Đọc dữ liệu từ Google Sheet
-            data = sheet.get_all_records()
-            if not data:
-                st.warning("⚠️ Chưa có dữ liệu để xuất.")
-            else:
-                df = pd.DataFrame(data)
-                
-                # Áp dụng bộ lọc
-                if filter_type == "Một ngày":
-                    df = df[df['Ngày'] == str(filter_date)]
-                elif filter_type == "Từ ngày đến ngày":
-                    df = df[(df['Ngày'] >= str(filter_date_from)) & (df['Ngày'] <= str(filter_date_to))]
-                
-                if df.empty:
-                    st.warning("⚠️ Không có dữ liệu cho khoảng thời gian đã chọn.")
-                else:
-                    # Gom nhóm và tính tổng
-                    numeric_cols = [col for col in df.columns if col != 'Ngày']
-                    df_tong_hop = df.groupby('Ngày')[numeric_cols].sum().reset_index()
-                    
-                    # Tính tổng cộng
-                    total_row = {'Ngày': 'TỔNG CỘNG'}
-                    for col in numeric_cols:
-                        total_row[col] = df_tong_hop[col].sum()
-                    
-                    # Thêm hàng tổng cộng vào đầu
-                    df_tong_hop = pd.concat([pd.DataFrame([total_row]), df_tong_hop], ignore_index=True)
-                    
-                    # Thêm cột STT
-                    stt = [''] + list(range(1, len(df_tong_hop)))
-                    df_tong_hop.insert(0, 'STT', stt)
-                    
-                    # Tạo file Excel
-                    excel_data = create_report_excel(df_tong_hop)
-                    
-                    st.download_button(
-                        label="📥 Tải File Excel",
-                        data=excel_data,
-                        file_name=f"Bao_cao_loi_{date.today().strftime('%d_%m_%Y')}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True
-                    )
-                    
-                    # Hiển thị preview
-                    with st.expander("👁️ Xem trước dữ liệu"):
-                        df_display = df_tong_hop.copy()
-                        st.dataframe(df_display, use_container_width=True)
-        except Exception as e:
-            st.error(f"❌ Lỗi tạo báo cáo: {e}")
+        # Áp dụng bộ lọc
+        if filter_type == "Một ngày":
+            df = df[df['Ngày'] == str(filter_date)]
+        elif filter_type == "Từ ngày đến ngày":
+            df = df[(df['Ngày'] >= str(filter_date_from)) & (df['Ngày'] <= str(filter_date_to))]
+        
+        if df.empty:
+            st.warning("⚠️ Không có dữ liệu cho khoảng thời gian đã chọn.")
+        else:
+            # Gom nhóm và tính tổng
+            numeric_cols = [col for col in df.columns if col != 'Ngày']
+            df_tong_hop = df.groupby('Ngày')[numeric_cols].sum().reset_index()
+            
+            # Tính tổng cộng
+            total_row = {'Ngày': 'TỔNG CỘNG'}
+            for col in numeric_cols:
+                total_row[col] = df_tong_hop[col].sum()
+            
+            # Thêm hàng tổng cộng vào đầu
+            df_tong_hop = pd.concat([pd.DataFrame([total_row]), df_tong_hop], ignore_index=True)
+            
+            # Thêm cột STT
+            stt = [''] + list(range(1, len(df_tong_hop)))
+            df_tong_hop.insert(0, 'STT', stt)
+            
+            # Tạo file Excel
+            excel_data = create_report_excel(df_tong_hop)
+            
+            st.download_button(
+                label="📥 Tải File Excel",
+                data=excel_data,
+                file_name=f"Bao_cao_loi_{date.today().strftime('%d_%m_%Y')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
+            
+            # Hiển thị preview
+            with st.expander("👁️ Xem trước dữ liệu"):
+                st.dataframe(df_tong_hop, use_container_width=True)
 
 # ===== QUẢN LÝ DỮ LIỆU =====
 with st.expander("⚙️ Quản Lý Dữ Liệu"):
@@ -393,29 +364,23 @@ with st.expander("⚙️ Quản Lý Dữ Liệu"):
     
     with col_manage1:
         if st.button("🔍 Xem Tất Cả Dữ Liệu", use_container_width=True):
-            if sheet:
-                try:
-                    data = sheet.get_all_records()
-                    if data:
-                        df_view = pd.DataFrame(data)
-                        st.dataframe(df_view, use_container_width=True)
-                    else:
-                        st.info("Không có dữ liệu")
-                except Exception as e:
-                    st.error(f"❌ Lỗi đọc dữ liệu: {e}")
+            df_view = load_data()
+            if not df_view.empty:
+                st.dataframe(df_view, use_container_width=True)
+            else:
+                st.info("Không có dữ liệu")
     
     with col_manage2:
         st.subheader("Xóa Dữ Liệu")
         password_input = st.text_input("Nhập mật khẩu:", type="password", key="del_password")
         if st.button("🗑️ Xóa Tất Cả", use_container_width=True):
             if password_input == "Admin@1234":
-                if sheet:
-                    try:
-                        # Xóa tất cả hàng trừ header
-                        sheet.delete_rows(2, sheet.row_count)
-                        st.success("✅ Đã xóa tất cả dữ liệu")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"❌ Lỗi xóa dữ liệu: {e}")
+                # Xóa file CSV
+                if os.path.exists(CSV_FILE):
+                    os.remove(CSV_FILE)
+                    st.success("✅ Đã xóa tất cả dữ liệu")
+                    st.rerun()
+                else:
+                    st.info("Không có dữ liệu để xóa")
             else:
                 st.error("❌ Mật khẩu không chính xác!")
