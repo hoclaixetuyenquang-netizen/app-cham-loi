@@ -1,11 +1,11 @@
 import streamlit as st
 import pandas as pd
 from datetime import date, datetime, timedelta
-import sqlite3
 import io
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
+from supabase import create_client, Client
 
 # Cấu hình trang cho di động
 st.set_page_config(
@@ -79,11 +79,23 @@ def play_sound():
     """
     st.markdown(sound_html, unsafe_allow_html=True)
 
-# 1. Khởi tạo Database SQLite cục bộ
-conn = sqlite3.connect("dulieu_loi.db", check_same_thread=False)
-c = conn.cursor()
+# ===== SUPABASE CONNECTION =====
+@st.cache_resource
+def get_supabase_client():
+    """Kết nối tới Supabase"""
+    try:
+        url = st.secrets["SUPABASE_URL"]
+        key = st.secrets["SUPABASE_KEY"]
+        supabase: Client = create_client(url, key)
+        return supabase
+    except Exception as e:
+        st.error(f"❌ Lỗi kết nối Supabase: {e}")
+        st.info("📌 Bạn cần setup `.streamlit/secrets.toml` với SUPABASE_URL và SUPABASE_KEY")
+        return None
 
-# Tạo bảng nếu chưa có
+supabase = get_supabase_client()
+
+# Danh sách cột lỗi
 columns = [
     "Khong_that_day_an_toan", "Khong_bat_xi_nhan", "Khong_quan_sat_guong", 
     "Dung_do_xe_sai_quy_dinh", "Khong_chap_hanh_bien_bao", "Mo_cua_xe_khong_an_toan", 
@@ -98,18 +110,14 @@ columns_display = [
     "Lỗi vạch kẻ đường", "Không thực hiện theo yêu cầu", "Lỗi khác"
 ]
 
-cols_sql = ", ".join([f"{col} INTEGER" for col in columns])
-c.execute(f"CREATE TABLE IF NOT EXISTS LoiThi (ngay TEXT, {cols_sql})")
-conn.commit()
-
-# Khởi tạo session state cho việc theo dõi các lỗi được chọn
+# Khởi tạo session state
 if "selected_errors" not in st.session_state:
     st.session_state.selected_errors = set()
 
 if "save_success" not in st.session_state:
     st.session_state.save_success = False
 
-# 2. Giao diện nhập liệu
+# ===== GIAO DIỆN NHẬP LIỆU =====
 st.title("THỐNG KÊ LỖI ĐƯỜNG TRƯỜNG")
 
 # Chọn ngày
@@ -124,14 +132,12 @@ if st.session_state.save_success:
     st.balloons()
     st.session_state.save_success = False
 
-# Tạo các nút bấm lỗi sát lề trái
+# Tạo các nút bấm lỗi
 for idx, display_text in enumerate(columns_display):
-    # Tạo nút bấm động với màu sắc thay đổi
     is_selected = idx in st.session_state.selected_errors
     button_color = "🔴" if is_selected else "⚪"
     
     if st.button(f"{button_color} {display_text}", key=f"error_btn_{idx}", use_container_width=True):
-        # Toggle lỗi
         if idx in st.session_state.selected_errors:
             st.session_state.selected_errors.remove(idx)
         else:
@@ -144,22 +150,30 @@ col1, col2, col3 = st.columns(3)
 
 with col1:
     if st.button("💾 Lưu", use_container_width=True):
-        # Tạo mảng lỗi
-        loi_values = [1 if idx in st.session_state.selected_errors else 0 for idx in range(len(columns))]
-        
-        # Lưu vào database
-        placeholders = ", ".join(["?"] * (len(columns) + 1))
-        c.execute(f"INSERT INTO LoiThi VALUES ({placeholders})", [str(ngay_sat_hach)] + loi_values)
-        conn.commit()
-        
-        # Phát âm thanh
-        play_sound()
-        
-        # Reset lỗi đã chọn
-        st.session_state.selected_errors = set()
-        st.session_state.save_success = True
-        
-        st.rerun()
+        if not supabase:
+            st.error("❌ Không thể kết nối Supabase")
+        else:
+            try:
+                # Tạo object dữ liệu
+                loi_values = [1 if idx in st.session_state.selected_errors else 0 for idx in range(len(columns))]
+                
+                data = {
+                    "ngay": str(ngay_sat_hach),
+                    **{columns[i]: loi_values[i] for i in range(len(columns))}
+                }
+                
+                # Lưu vào Supabase
+                response = supabase.table("loi_thi").insert([data]).execute()
+                
+                # Phát âm thanh
+                play_sound()
+                
+                # Reset
+                st.session_state.selected_errors = set()
+                st.session_state.save_success = True
+                st.rerun()
+            except Exception as e:
+                st.error(f"❌ Lỗi lưu dữ liệu: {e}")
 
 with col2:
     if st.button("🔄 Xóa", use_container_width=True):
@@ -167,20 +181,22 @@ with col2:
         st.rerun()
 
 with col3:
-    # Hiển thị số lỗi được chọn
     st.metric("Số lỗi chọn", len(st.session_state.selected_errors))
 
-# 3. Xuất báo cáo tổng hợp ra Excel
+# ===== XUẤT BÁO CÁO =====
 st.divider()
 st.subheader("📊 Báo Cáo Tổng Hợp")
 
 # Thống kê nhanh
-try:
-    df_all = pd.read_sql_query("SELECT * FROM LoiThi", conn)
-    if not df_all.empty:
-        st.info(f"📈 Tổng số lần ghi nhận: **{len(df_all)}** | Số ngày: **{df_all['ngay'].nunique()}**")
-except:
-    pass
+if supabase:
+    try:
+        response = supabase.table("loi_thi").select("*").execute()
+        df_all = pd.DataFrame(response.data) if response.data else pd.DataFrame()
+        
+        if not df_all.empty:
+            st.info(f"📈 Tổng số lần ghi nhận: **{len(df_all)}** | Số ngày: **{df_all['ngay'].nunique()}**")
+    except:
+        pass
 
 # Phần lọc dữ liệu
 st.write("**Lọc dữ liệu báo cáo:**")
@@ -235,7 +251,6 @@ def create_report_excel(df_tong_hop):
     total_fill = PatternFill(start_color="E7E6E6", end_color="E7E6E6", fill_type="solid")
     
     center_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-    left_alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
     
     border = Border(
         left=Side(style='thin', color="000000"),
@@ -324,95 +339,105 @@ def format_date(date_str):
         return date_str
 
 if st.button("📥 Tạo Báo Cáo", use_container_width=True):
-    # Đọc dữ liệu từ DB
-    df = pd.read_sql_query("SELECT * FROM LoiThi", conn)
-    
-    if df.empty:
-        st.warning("⚠️ Chưa có dữ liệu để xuất.")
+    if not supabase:
+        st.error("❌ Không thể kết nối Supabase")
     else:
-        # Áp dụng bộ lọc
-        if filter_type == "Một ngày":
-            df = df[df['ngay'] == str(filter_date)]
-        elif filter_type == "Từ ngày đến ngày":
-            df = df[(df['ngay'] >= str(filter_date_from)) & (df['ngay'] <= str(filter_date_to))]
-        
-        if df.empty:
-            st.warning("⚠️ Không có dữ liệu cho khoảng thời gian đã chọn.")
-        else:
-            # Gom nhóm cộng dồn lỗi theo ngày
-            df_tong_hop = df.groupby('ngay').sum(numeric_only=True).reset_index()
+        try:
+            # Đọc dữ liệu từ Supabase
+            response = supabase.table("loi_thi").select("*").execute()
+            df = pd.DataFrame(response.data) if response.data else pd.DataFrame()
             
-            # Tính tổng cộng
-            total_row = {}
-            total_row['ngay'] = 'TỔNG CỘNG'
-            
-            # Tính tổng cho từng cột lỗi
-            for col in df_tong_hop.columns:
-                if col != 'ngay':
-                    total_row[col] = df_tong_hop[col].sum()
-            
-            # Thêm hàng tổng cộng vào đầu
-            df_tong_hop = pd.concat([pd.DataFrame([total_row]), df_tong_hop], ignore_index=True)
-            
-            # Thêm cột STT
-            stt = [''] + list(range(1, len(df_tong_hop)))
-            df_tong_hop.insert(0, 'STT', stt)
-            
-            # Đổi tên cột với tên lỗi đầy đủ
-            df_tong_hop.columns = ['STT', 'Ngày sát hạch'] + full_error_names
-            
-            # Tạo file Excel
-            excel_data = create_report_excel(df_tong_hop)
-            
-            st.download_button(
-                label="📥 Tải File Excel",
-                data=excel_data,
-                file_name=f"Bao_cao_loi_{date.today().strftime('%d_%m_%Y')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True
-            )
-            
-            # Hiển thị preview dữ liệu
-            with st.expander("👁️ Xem trước dữ liệu"):
-                # Tạo dataframe hiển thị với định dạng đẹp
-                df_display = df_tong_hop.copy()
+            if df.empty:
+                st.warning("⚠️ Chưa có dữ liệu để xuất.")
+            else:
+                # Áp dụng bộ lọc
+                if filter_type == "Một ngày":
+                    df = df[df['ngay'] == str(filter_date)]
+                elif filter_type == "Từ ngày đến ngày":
+                    df = df[(df['ngay'] >= str(filter_date_from)) & (df['ngay'] <= str(filter_date_to))]
                 
-                # Format ngày DD/MM/YYYY cho cột Ngày sát hạch
-                df_display['Ngày sát hạch'] = df_display['Ngày sát hạch'].apply(
-                    lambda x: format_date(x) if x != 'TỔNG CỘNG' else x
-                )
-                
-                # Hiển thị bảng
-                st.dataframe(df_display, use_container_width=True)
+                if df.empty:
+                    st.warning("⚠️ Không có dữ liệu cho khoảng thời gian đã chọn.")
+                else:
+                    # Gom nhóm và tính tổng
+                    df_tong_hop = df.groupby('ngay')[columns].sum().reset_index()
+                    
+                    # Tính tổng cộng
+                    total_row = {'ngay': 'TỔNG CỘNG'}
+                    for col in columns:
+                        total_row[col] = df_tong_hop[col].sum()
+                    
+                    # Thêm hàng tổng cộng vào đầu
+                    df_tong_hop = pd.concat([pd.DataFrame([total_row]), df_tong_hop], ignore_index=True)
+                    
+                    # Thêm cột STT
+                    stt = [''] + list(range(1, len(df_tong_hop)))
+                    df_tong_hop.insert(0, 'STT', stt)
+                    
+                    # Đổi tên cột
+                    df_tong_hop.columns = ['STT', 'Ngày sát hạch'] + full_error_names
+                    
+                    # Tạo file Excel
+                    excel_data = create_report_excel(df_tong_hop)
+                    
+                    st.download_button(
+                        label="📥 Tải File Excel",
+                        data=excel_data,
+                        file_name=f"Bao_cao_loi_{date.today().strftime('%d_%m_%Y')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True
+                    )
+                    
+                    # Hiển thị preview
+                    with st.expander("👁️ Xem trước dữ liệu"):
+                        df_display = df_tong_hop.copy()
+                        df_display['Ngày sát hạch'] = df_display['Ngày sát hạch'].apply(
+                            lambda x: format_date(x) if x != 'TỔNG CỘNG' else x
+                        )
+                        st.dataframe(df_display, use_container_width=True)
+        except Exception as e:
+            st.error(f"❌ Lỗi tạo báo cáo: {e}")
 
-# 4. Phần quản lý dữ liệu (tùy chọn)
+# ===== QUẢN LÝ DỮ LIỆU =====
 with st.expander("⚙️ Quản Lý Dữ Liệu"):
     st.subheader("Xem Dữ Liệu")
     col_manage1, col_manage2 = st.columns(2)
     
     with col_manage1:
         if st.button("🔍 Xem Tất Cả Dữ Liệu", use_container_width=True):
-            df_view = pd.read_sql_query("SELECT * FROM LoiThi", conn)
-            if not df_view.empty:
-                # Đổi tên cột cho hiển thị
-                df_view_display = df_view.copy()
-                df_view_display.columns = ['Ngày sát hạch'] + full_error_names
-                
-                # Format ngày
-                df_view_display['Ngày sát hạch'] = df_view_display['Ngày sát hạch'].apply(format_date)
-                
-                st.dataframe(df_view_display, use_container_width=True)
-            else:
-                st.info("Không có dữ liệu")
+            if supabase:
+                try:
+                    response = supabase.table("loi_thi").select("*").execute()
+                    df_view = pd.DataFrame(response.data) if response.data else pd.DataFrame()
+                    
+                    if not df_view.empty:
+                        # Đổi tên cột
+                        df_view_display = df_view.copy()
+                        df_view_display.columns = ['ID', 'Ngày sát hạch'] + full_error_names
+                        
+                        # Format ngày
+                        df_view_display['Ngày sát hạch'] = df_view_display['Ngày sát hạch'].apply(format_date)
+                        
+                        # Xóa cột ID
+                        df_view_display = df_view_display.drop('ID', axis=1)
+                        
+                        st.dataframe(df_view_display, use_container_width=True)
+                    else:
+                        st.info("Không có dữ liệu")
+                except Exception as e:
+                    st.error(f"❌ Lỗi đọc dữ liệu: {e}")
     
     with col_manage2:
         st.subheader("Xóa Dữ Liệu")
         password_input = st.text_input("Nhập mật khẩu:", type="password", key="del_password")
         if st.button("🗑️ Xóa Tất Cả", use_container_width=True):
             if password_input == "123":
-                c.execute("DELETE FROM LoiThi")
-                conn.commit()
-                st.success("✅ Đã xóa tất cả dữ liệu")
-                st.rerun()
+                if supabase:
+                    try:
+                        supabase.table("loi_thi").delete().neq("id", -1).execute()
+                        st.success("✅ Đã xóa tất cả dữ liệu")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ Lỗi xóa dữ liệu: {e}")
             else:
                 st.error("❌ Mật khẩu không chính xác!")
