@@ -276,7 +276,8 @@ def create_report_excel(df_tong_hop):
     ws['A2'].alignment = center_alignment
     ws['A2'].border = border
     
-    col_idx = 2
+    # Start totals at column 3 (C) to align with STT (A) and Ngày (B)
+    col_idx = 3
     for col_name in df_tong_hop.columns[2:]:
         cell = ws.cell(row=2, column=col_idx)
         value = total_row_data[col_name]
