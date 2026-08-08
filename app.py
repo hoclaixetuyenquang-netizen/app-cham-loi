@@ -92,10 +92,10 @@ def save_data(df):
 
 # Danh sách cột lỗi
 columns_display = [
-    "Không thắt dây an toàn", "Không bật xi nhan trái/phải", "Không quan sát gương",
-    "Dừng, đỗ xe sai quy định", "Không chấp hành hiệu lệnh", "Mở cửa xe không an toàn",
-    "Vượt xe không đảm bảo", "Quay đầu xe không đúng", "Không quan sát, giảm tốc",
-    "Lỗi vạch kẻ đường", "Không thực hiện theo yêu cầu", "Lỗi khác"
+    "Không thắt dây an toàn", "Không bật xi nhan trái xuất phát hoặc xi nhan phải kết thúc", "Không quan sát gương",
+    "Dừng, đỗ xe sai quy định", "Không chấp hành hiệu lệnh biển báo", "Mở cửa xe không an toàn",
+    "Vượt xe không đảm bảo", "Quay đầu xe không đúng quy định", "Không quan sát, giảm tốc độ hoặc dừng lại trong cấc trường hợp theo quy định",
+    "Lỗi không chấp hành vạch kẻ đường", "Không thực hiện theo yêu cầu của Sát hạch viên", "Lỗi khác"
 ]
 
 # Khởi tạo session state
