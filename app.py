@@ -280,7 +280,11 @@ def create_report_excel(df_tong_hop):
     for col_name in df_tong_hop.columns[2:]:
         cell = ws.cell(row=2, column=col_idx)
         value = total_row_data[col_name]
-        cell.value = int(value) if pd.notna(value) else 0
+        # nếu có thể chuyển thành số thì chuyển, không thì để nguyên hoặc 0
+        try:
+            cell.value = int(value) if pd.notna(value) else 0
+        except (ValueError, TypeError):
+            cell.value = value if pd.notna(value) else 0
         cell.font = total_font
         cell.fill = total_fill
         cell.alignment = center_alignment
@@ -309,10 +313,16 @@ def create_report_excel(df_tong_hop):
             
             if col_name == 'STT':
                 cell.value = value if value != '' else ''
-            elif col_name == 'Ngày sát hạch':
+            # kiểm tra tên cột chứa 'Ngày' (thích nghi nhiều tên khác nhau)
+            elif 'ngày' in col_name.lower():
                 cell.value = value
             else:
-                cell.value = int(value) if pd.notna(value) else 0
+                # chuyển số an toàn
+                try:
+                    cell.value = int(value) if pd.notna(value) else 0
+                except (ValueError, TypeError):
+                    # nếu không chuyển được, ghi nguyên giá trị (hoặc 0 tùy ý)
+                    cell.value = value if pd.notna(value) else 0
             
             cell.font = data_font
             cell.alignment = center_alignment
@@ -348,6 +358,8 @@ if st.button("📥 Tạo Báo Cáo", use_container_width=True):
         else:
             # Gom nhóm và tính tổng
             numeric_cols = [col for col in df.columns if col != 'Ngày']
+            # Ép các cột numeric về số (nếu có giá trị không phải số sẽ thành NaN rồi fill 0)
+            df[numeric_cols] = df[numeric_cols].apply(pd.to_numeric, errors='coerce').fillna(0)
             df_tong_hop = df.groupby('Ngày')[numeric_cols].sum().reset_index()
             
             # Tính tổng cộng
